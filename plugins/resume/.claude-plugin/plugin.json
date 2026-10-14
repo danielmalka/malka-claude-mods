@@ -1,0 +1,9 @@
+{
+  "name": "resume",
+  "version": "0.1.0",
+  "description": "Detects a previous session that was interrupted mid-turn and offers Resume/Dismiss in a band above the prompt.",
+  "author": {
+    "name": "danielmalka"
+  },
+  "types": "./types/index.d.ts"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "sentinel",
+  "version": "0.1.0",
+  "description": "A live band above the prompt showing running subagents and background Bash, at zero token cost.",
+  "author": {
+    "name": "danielmalka"
+  }
+}

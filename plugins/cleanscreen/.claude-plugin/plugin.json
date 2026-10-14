@@ -1,0 +1,9 @@
+{
+  "name": "cleanscreen",
+  "version": "0.1.0",
+  "description": "Hides tool calls and their output, shows Claude's text and a progress band above the prompt. Off by default; /cleanscreen on turns it on.",
+  "author": {
+    "name": "danielmalka"
+  },
+  "types": "./types/index.d.ts"
+}

@@ -1,0 +1,9 @@
+{
+  "name": "statusline",
+  "version": "0.1.0",
+  "description": "A status line under the prompt: model, folder and branch, context, 5h/7d limits and cache. Off by default; /statusline on turns it on.",
+  "author": {
+    "name": "danielmalka"
+  },
+  "types": "./types/index.d.ts"
+}
