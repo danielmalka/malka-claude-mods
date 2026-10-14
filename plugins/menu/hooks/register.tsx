@@ -4,6 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type {} from '../types/statusline'
 import type {} from '../types/cleanscreen'
 import type {} from '../types/mode'
+import type {} from '../types/permissions'
 
 const panelAtom = atom({ plugin: 'menu', key: 'panel' } as const, 'main')
 const presentAtom = atom({ plugin: 'menu', key: 'present' } as const, false)
@@ -12,9 +13,10 @@ const presentAtom = atom({ plugin: 'menu', key: 'present' } as const, false)
 const statuslineEntry = { plugin: 'statusline', key: 'menuEntry' } as const
 const cleanscreenEntry = { plugin: 'cleanscreen', key: 'menuEntry' } as const
 const modeEntry = { plugin: 'mode', key: 'menuEntry' } as const
+const permissionsEntry = { plugin: 'permissions', key: 'menuEntry' } as const
 
 const PANE = 'mods-menu'
-const NAMES = ['statusline', 'cleanscreen', 'mode']
+const NAMES = ['statusline', 'cleanscreen', 'mode', 'permissions']
 
 type Row = { name: string; title: string; summary: string; order: number }
 
@@ -25,6 +27,7 @@ async function entries($: EngineInterface): Promise<Row[]> {
     (await $.state.get(statuslineEntry).catch(none)).value,
     (await $.state.get(cleanscreenEntry).catch(none)).value,
     (await $.state.get(modeEntry).catch(none)).value,
+    (await $.state.get(permissionsEntry).catch(none)).value,
   ]
   const rows: Row[] = []
   found.forEach((v, i) => {
@@ -78,7 +81,7 @@ function mainPage({ Box, Text, Button }: { Box: any; Text: any; Button: any }, r
         <Box flexDirection="column" marginTop={1}>
           <Text>No mods installed</Text>
           <Text dimColor>Install one with /plugin install statusline@malka-claude-mods</Text>
-          <Text dimColor>(also cleanscreen or mode).</Text>
+          <Text dimColor>(also cleanscreen, mode or permissions).</Text>
         </Box>
       )}
       {rows.map((r, i) => (
@@ -107,7 +110,7 @@ export const register: Register = on => {
     await update($, panelAtom, () => 'main')
     isOpen = false
     await $.command
-      .register({ name: 'mods', description: 'Open the mods menu', argumentHint: '[statusline|cleanscreen|mode]', immediate: true })
+      .register({ name: 'mods', description: 'Open the mods menu', argumentHint: '[statusline|cleanscreen|mode|permissions]', immediate: true })
       .catch(() => undefined)
     return next(e)
   })
@@ -145,6 +148,7 @@ export const register: Register = on => {
   on('ui.press', { plugin: 'statusline', element: 'mods-back' }, back)
   on('ui.press', { plugin: 'cleanscreen', element: 'mods-back' }, back)
   on('ui.press', { plugin: 'mode', element: 'mods-back' }, back)
+  on('ui.press', { plugin: 'permissions', element: 'mods-back' }, back)
 
   on('ui.press', { plugin: 'statusline', element: 'mods-open' }, async ($, e, next) => {
     await toggle($)

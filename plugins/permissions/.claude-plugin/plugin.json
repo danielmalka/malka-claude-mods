@@ -1,0 +1,9 @@
+{
+  "name": "permissions",
+  "version": "0.1.0",
+  "description": "Shows the permission mode and picks the one new sessions start in (permissions.defaultMode). Does nothing until you pick something.",
+  "author": {
+    "name": "danielmalka"
+  },
+  "types": "./types/index.d.ts"
+}
