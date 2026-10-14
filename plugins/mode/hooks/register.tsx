@@ -12,6 +12,8 @@ const sessionModel = atom({ plugin: 'mode', key: 'sessionModel' } as const, null
 const manual = atom({ plugin: 'mode', key: 'manual' } as const, false)
 // Foreign ref: the optional `menu` mod owns it (apiVersion 1); undefined = no menu.
 const menuPanel = { plugin: 'menu', key: 'panel' } as const
+// Foreign ref: decision-router's own routed effort; absent plugin = null.
+const routerEffort = { plugin: 'decision-router', key: 'effort' } as const
 const menuEntryRef = { plugin: 'mode', key: 'menuEntry' } as const
 
 // What the engine itself ran the last main-loop step at, to notice the user's own /effort.
@@ -144,24 +146,30 @@ export const register: Register = on => {
     try {
       level = await read($, effort)
     } catch {}
+    // A level the router put on this step is not the engine's: do not mistake it for the user's /effort.
+    let routed: unknown = null
+    try {
+      routed = (await $.state.get(routerEffort)).value
+    } catch {}
+    const engineEffort = routed !== null && e.effort === routed ? undefined : e.effort
     // The session's own level and model, as the engine had them, before ours replaces the level.
     let changed = false
     // The engine's level moved on the same model since the last step: the user ran /effort or /config.
     // That is a newer choice than our override, so ours is dropped.
     if (e.model !== seenModel) seenEffort = undefined
     seenModel = e.model
-    if (isEffort(e.effort)) {
-      if (level !== null && seenEffort !== undefined && e.effort !== seenEffort) {
+    if (isEffort(engineEffort)) {
+      if (level !== null && seenEffort !== undefined && engineEffort !== seenEffort) {
         level = null
         await update($, effort, () => null).catch(() => undefined)
         await $.store.delete('effort').catch(() => undefined)
-        $.ui.toast(`Effort: following your /effort ${e.effort}`)
+        $.ui.toast(`Effort: following your /effort ${engineEffort}`)
         changed = true
       }
-      seenEffort = e.effort
+      seenEffort = engineEffort
     }
-    if (isEffort(e.effort) && e.effort !== (await read($, sessionEffort).catch(() => null))) {
-      await update($, sessionEffort, () => e.effort as Effort).catch(() => undefined)
+    if (isEffort(engineEffort) && engineEffort !== (await read($, sessionEffort).catch(() => null))) {
+      await update($, sessionEffort, () => engineEffort).catch(() => undefined)
       changed = true
     }
     if (e.model !== (await read($, sessionModel).catch(() => null))) {

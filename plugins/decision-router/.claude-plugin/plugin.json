@@ -1,0 +1,9 @@
+{
+  "name": "decision-router",
+  "version": "0.1.0",
+  "description": "Asks a decision model which Claude model and effort fit your prompt. Does nothing until DECISION_MOD_KEY is set.",
+  "author": {
+    "name": "danielmalka"
+  },
+  "types": "./types/index.d.ts"
+}

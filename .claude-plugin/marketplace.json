@@ -36,6 +36,11 @@
       "description": "Shows the permission mode and picks the one new sessions start in (permissions.defaultMode). Does nothing until you pick something."
     },
     {
+      "name": "decision-router",
+      "source": "./plugins/decision-router",
+      "description": "Asks a decision model which Claude model and effort fit your first prompt and offers to switch. Sends a prompt excerpt to a third party; does nothing until DECISION_MOD_KEY is set."
+    },
+    {
       "name": "menu",
       "source": "./plugins/menu",
       "description": "An optional /mods menu that lists the installed mods (status line, clean screen, mode) and opens each one's page in a pane."
