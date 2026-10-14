@@ -7,16 +7,16 @@ Asks a decision model which Claude model (haiku, sonnet, opus) and which effort 
 - The first **5000 characters** of your first prompt of a session, and of each routed subagent prompt, are sent **as typed, with no secret masking**, to the host of `DECISION_MOD_URL`. By default that is OpenRouter, which forwards it to the model vendor (TypeSafe). Do not use this mod if your prompts can contain secrets or material you may not share with those parties.
 - For subagents the excerpt is sent before the band appears (`ask`) or with no band at all (`auto`).
 - **Nothing is sent while `DECISION_MOD_KEY` is unset.** The mod then shows one notice per session and stays idle.
-- The first prompt of a session, and each `ask` subagent spawn, may be **held up to 10 seconds** (the decision call included) for the confirmation band.
+- The first prompt of a session **waits for your answer** in a confirmation dialog (Switch or Keep) with **no time limit**; closing the dialog, or typing free text under "Other", counts as Keep. Each `ask` subagent spawn may be **held up to 10 seconds** (the decision call included) for its confirmation band.
 
 ## What it does
 
 - On the first non-slash prompt of a new session (not a resumed one) it asks the decision model which model and effort fit. Later prompts of the session trigger no call.
-- A band above the prompt shows the suggested model and effort, each with its confidence. **Switch** applies them to the current request. **Keep**, or no click within 10 s, keeps everything as it was.
-- A value whose confidence is under `DECISION_MOD_MIN_CONFIDENCE` is shown and kept, not offered. If neither value passes, the band only informs and does not hold the prompt.
+- A dialog shows the suggested model and effort, each with its confidence, and holds the prompt until you answer. **Switch** applies them to the current request. **Keep**, closing the dialog, or a non-interactive run (`-p`) keeps everything as it was.
+- A value whose confidence is under `DECISION_MOD_MIN_CONFIDENCE` is shown and kept, not offered. If neither value passes, no dialog is shown: the prompt goes at once and a small informational band disappears by itself after 10 s.
 - The effort is applied per request. The mod never runs `/effort` and writes no settings.
 - A call that fails or takes longer than 3 s keeps the current model and effort and shows a toast.
-- Subagents follow `DECISION_MOD_SUBAGENTS`: `ask` shows one band per spawn (same buttons, same 10 s), `auto` applies the values that pass and shows a toast, `off` routes nothing. Spawns with an explicit model, forks and teammates are never touched.
+- Subagents follow `DECISION_MOD_SUBAGENTS`: `ask` shows one band per spawn (Switch/Keep buttons, held up to 10 s; no click means the subagent runs as spawned), `auto` applies the values that pass and shows a toast, `off` routes nothing. Spawns with an explicit model, forks and teammates are never touched.
 - `auto` caution: text inside a subagent prompt can steer the suggestion (for example toward opus/max), and `auto` applies it without asking. Prefer `ask` if cost matters.
 
 ## Configuration
@@ -67,16 +67,16 @@ Pergunta a um modelo de decisão qual modelo Claude (haiku, sonnet, opus) e qual
 - Os primeiros **5000 caracteres** do primeiro prompt de uma sessão, e do prompt de cada subagente roteado, são enviados **exatamente como digitados, sem mascarar segredos**, ao host de `DECISION_MOD_URL`. Por padrão é a OpenRouter, que repassa ao fornecedor do modelo (TypeSafe). Não use este mod se seus prompts podem conter segredos ou material que você não pode compartilhar com essas partes.
 - Para subagentes o trecho é enviado antes de a faixa aparecer (`ask`) ou sem faixa nenhuma (`auto`).
 - **Nada é enviado enquanto `DECISION_MOD_KEY` não estiver definida.** O mod mostra um aviso por sessão e fica ocioso.
-- O primeiro prompt de uma sessão, e cada spawn de subagente em `ask`, pode ficar **retido até 10 segundos** (a chamada de decisão incluída) esperando a faixa de confirmação.
+- O primeiro prompt de uma sessão **espera sua resposta** em um diálogo de confirmação (Switch ou Keep) **sem limite de tempo**; fechar o diálogo, ou digitar texto livre em "Other", conta como Keep. Cada spawn de subagente em `ask` pode ficar **retido até 10 segundos** (a chamada de decisão incluída) esperando sua faixa de confirmação.
 
 ## O que faz
 
 - No primeiro prompt que não seja comando `/` de uma sessão nova (não retomada), pergunta ao modelo de decisão qual modelo e esforço servem. Os prompts seguintes não geram chamada.
-- Uma faixa acima do prompt mostra o modelo e o esforço sugeridos, cada um com sua confiança. **Switch** aplica à requisição atual. **Keep**, ou nenhum clique em 10 s, mantém tudo como estava.
-- Um valor com confiança abaixo de `DECISION_MOD_MIN_CONFIDENCE` é mostrado e mantido, não oferecido. Se nenhum dos dois passar, a faixa só informa e não retém o prompt.
+- Um diálogo mostra o modelo e o esforço sugeridos, cada um com sua confiança, e retém o prompt até você responder. **Switch** aplica à requisição atual. **Keep**, fechar o diálogo ou uma execução não interativa (`-p`) mantém tudo como estava.
+- Um valor com confiança abaixo de `DECISION_MOD_MIN_CONFIDENCE` é mostrado e mantido, não oferecido. Se nenhum dos dois passar, não há diálogo: o prompt segue na hora e uma pequena faixa informativa some sozinha após 10 s.
 - O esforço é aplicado por requisição. O mod nunca roda `/effort` e não grava configuração.
 - Chamada que falha ou passa de 3 s mantém modelo e esforço atuais e mostra um aviso.
-- Subagentes seguem `DECISION_MOD_SUBAGENTS`: `ask` mostra uma faixa por spawn (mesmos botões, mesmos 10 s), `auto` aplica os valores que passam e mostra um aviso, `off` não roteia nada. Spawns com modelo explícito, forks e teammates nunca são alterados.
+- Subagentes seguem `DECISION_MOD_SUBAGENTS`: `ask` mostra uma faixa por spawn (botões Switch/Keep, retido até 10 s; sem clique o subagente roda como foi criado), `auto` aplica os valores que passam e mostra um aviso, `off` não roteia nada. Spawns com modelo explícito, forks e teammates nunca são alterados.
 - Cuidado com `auto`: texto dentro do prompt de um subagente pode direcionar a sugestão (por exemplo para opus/max), e `auto` aplica sem perguntar. Prefira `ask` se custo importa.
 
 ## Configuração
