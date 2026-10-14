@@ -36,8 +36,7 @@ let plan: { model?: Model; effort?: Effort; modelPending: boolean } | null = nul
 let done = false // the first prompt was handled (R4/R24)
 type Band = { lines: string[]; canSwitch: boolean; answer: ((v: 'switch' | 'keep') => void) | null }
 let openBand: Band | null = null
-let settleBand: ((v: 'switch' | 'keep') => void) | null = null // ends the pending hold, if any
-let epoch = 0 // bumped by each session.start: a hold of an older session must change nothing
+let epoch = 0 // bumped by each session.start: a dialog or hold of an older session must change nothing
 let seenEffort: Effort | undefined
 // Subagents (R17, R19b): bands and holds are per spawn; efforts are keyed by agentId.
 type SubBand = Band & { id: string }
@@ -56,7 +55,7 @@ let seenModel: string | undefined
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    settleBand?.('keep') // a band open from the previous session is released first
+    // $.ui.ask has no cancel: a dialog still open from the previous session stays until answered, and its answer applies nothing (epoch)
     for (const settle of [...subSettlers]) settle('keep')
     subSettlers.clear()
     subBands = []
@@ -70,7 +69,6 @@ export const register: Register = on => {
     plan = null
     done = false
     openBand = null
-    settleBand = null
     seenEffort = undefined
     seenModel = undefined
     await update($, routedEffort, () => null).catch(() => undefined)
@@ -107,12 +105,13 @@ export const register: Register = on => {
         effort: !effortHeld && r.effortConfidence >= cfg.minConfidence,
         effortHeld,
       }
-      const remaining = WINDOW_MS - ((await $.clock.now()) - startedAt)
-      if (remaining <= 0 || mine !== epoch) return next(e)
+      if (mine !== epoch) return next(e)
       const lines = bandLines(r, offer, cfg.minConfidence)
-      const redraw = () => void Promise.resolve($.ui.invalidate('ui.render')).catch(() => undefined)
       if (!offer.model && !offer.effort) {
-        // nothing to ask: the prompt goes at once; an informational band leaves by the mod's own timer
+        // nothing to ask: the prompt goes at once; an informational band leaves by the mod's own timer (R15a)
+        const remaining = WINDOW_MS - ((await $.clock.now()) - startedAt)
+        if (remaining <= 0) return next(e)
+        const redraw = () => void Promise.resolve($.ui.invalidate('ui.render')).catch(() => undefined)
         const info: Band = { lines, canSwitch: false, answer: null }
         // arm the timer first: if it throws, no band is left standing
         $.clock.after(remaining, () => {
@@ -125,24 +124,13 @@ export const register: Register = on => {
         redraw()
         return next(e)
       }
-      const answer = await new Promise<'switch' | 'keep'>(resolve => {
-        let settled = false
-        let timer: { cancel(): void } | undefined
-        const finish = (v: 'switch' | 'keep') => {
-          if (settled) return // a click after the window changes nothing (R15a)
-          settled = true
-          timer?.cancel()
-          if (openBand === own) openBand = null
-          if (settleBand === finish) settleBand = null
-          redraw()
-          resolve(v)
-        }
-        const own: Band = { lines, canSwitch: true, answer: finish }
-        timer = $.clock.after(remaining, () => finish('keep')) // armed before the band is published
-        openBand = own
-        settleBand = finish
-        redraw()
-      })
+      // The band is not drawn while prompt.submit holds the submission: ask in the engine's own dialog (no time limit).
+      // Anything but the exact label 'Switch' (Keep, free text, dismiss, -p) is Keep (R15).
+      let answer: 'switch' | 'keep' = 'keep'
+      try {
+        const chosen = await $.ui.ask(`Decision router suggests for this session:\n${lines.join('\n')}\nSwitch?`, ['Switch', 'Keep'])
+        if (chosen === 'Switch') answer = 'switch'
+      } catch {}
       if (answer === 'switch' && mine === epoch) {
         const next_ = { model: offer.model ? r.model : undefined, effort: offer.effort ? r.effort : undefined, modelPending: offer.model }
         // publish first: if it fails nothing stays applied

@@ -13,6 +13,9 @@ export const answers = (mc: number, ec: number, model = 'opus', effort = 3) => (
 })
 export const reply = (a = answers(0.9, 0.8)) => ({ status: 200, ok: true, headers: {}, text: JSON.stringify(a) })
 
+// The user's side of $.ui.ask (the engine's AskUserQuestion dialog): what they answer, what was asked.
+// 'reject' makes the dialog reject (dismiss, -p); `gate` holds the dialog open until it is resolved.
+export const dialog = { answer: 'Switch', asked: [] as string[], labels: [] as string[][], gate: null as null | Promise<void> }
 export let vals = new Map<string, unknown>()
 export type Opts = { env?: Record<string, string>; turns?: number; mode?: Record<string, unknown>; fetch?: (e: any) => any; throwMode?: boolean; throwSet?: boolean }
 // What the engine answers beneath the plugin. `mode.*` state is faked (the kit loads one plugin); decision-router.* is the real atom.
@@ -34,6 +37,18 @@ export function engine(on: any, o: Opts = {}) {
   on('ui.toast', (_$: any, e: any) => (toasts.push(e.text), ok))
   on('command.run', (_$: any, e: any) => (commands.push({ command: e.command, args: e.args }), { text: '' }))
   for (const ev of ['fs.write', 'config.set', 'store.set', 'store.delete']) on(ev, (_$: any, e: any) => (writes.push(ev), ok))
+  dialog.answer = 'Switch'
+  dialog.asked = []
+  dialog.labels = []
+  dialog.gate = null
+  on('tool.call', async (_$: any, e: any) => {
+    const question = String(e.questions?.[0]?.question ?? '')
+    dialog.asked.push(question)
+    dialog.labels.push((e.questions?.[0]?.options ?? []).map((o: any) => o.label))
+    if (dialog.gate) await dialog.gate
+    if (dialog.answer === 'reject') throw new Error('dismissed')
+    return { result: { answers: { [question]: dialog.answer } }, text: dialog.answer, ref: 1 }
+  })
   on('state.set', (_$: any, e: any, next: any) => (o.throwSet && e.plugin === 'decision-router' && e.value !== null ? { value: { isSet: false, version: 9 } } : (vals.set(`${e.plugin}.${e.key}`, e.value), e.plugin === 'decision-router' ? { value: { isSet: true, version: 1 } } : next(e))))
   on('state.get', (_$: any, e: any, next: any) => {
     if (e.plugin === 'decision-router') return { value: { value: vals.get(`${e.plugin}.${e.key}`), version: 0 } }
@@ -58,14 +73,10 @@ export const bandProps = { hasSurvey: false, isWorking: false, maxRows: 10, body
 export const mountBand = ($: any) => $.ui.mount({ plugin: 'decision-router', surface: 'terminal', component: 'AbovePrompt', props: bandProps } as any)
 export const step = ($: any, index = 0, extra: any = {}) => drain($.turn.step({ turnId: 't', index, model: 'claude-opus-5-5', effort: 'medium', messageCount: 1, ...extra }))
 
-// Submit, wait for the band, press, finish.
+// Submit the first prompt and answer its dialog.
 export async function routed($: any, key: 'switch' | 'keep') {
-  const p = submit($)
-  await tick()
-  const ui = await mountBand($)
-  await ui.press({ key })
-  await p
-  await ui.unmount()
+  dialog.answer = key === 'switch' ? 'Switch' : 'Keep'
+  await submit($)
 }
 export const text = (ui: any, re: RegExp) => ui.find({ type: 'Text', text: re })
 export const routedState = async (_$: any) => vals.get('decision-router.effort') ?? null

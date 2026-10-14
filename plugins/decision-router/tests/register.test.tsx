@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { KEY, ok, tick, drain, answers, reply, engine, start, submit, bandProps, mountBand, step, routed, text, routedState } from './harness'
+import { answers, reply, engine, start, submit, mountBand, step, routed, text, routedState, tick, dialog } from './harness'
 
 test('R1 no key: zero fetch, a single toast, the prompt goes through', async ($, on) => {
   mock.clock(on, { now: 0 })
@@ -18,12 +18,9 @@ test('R2 invalid variable: one toast naming it, the default applies and routing 
   mock.clock(on, { now: 0 })
   const { fetches, toasts } = engine(on, { env: { DECISION_MOD_MIN_CONFIDENCE: 'abc', DECISION_MOD_SUBAGENTS: 'yes' } })
   await start($)
-  const p = submit($)
-  await tick()
+  await routed($, 'keep')
   expect(fetches).toHaveLength(1)
   expect(toasts).toEqual(['Decision router: invalid DECISION_MOD_MIN_CONFIDENCE, DECISION_MOD_SUBAGENTS, using the default'])
-  await (await mountBand($)).press({ key: 'keep' })
-  await p
 })
 
 test('R4 a slash command is skipped and does not count as the first prompt', async ($, on) => {
@@ -64,7 +61,8 @@ test('R4 R24 second prompt: no decision call, no band, and the turn.step only ap
   await step($, 1)
   expect(fetches).toHaveLength(1)
   expect(timeline).toEqual(['core-submit', 'core-submit'])
-  expect(await (await mountBand($)).find({ key: 'switch' })).toBeUndefined()
+  expect(dialog.asked).toHaveLength(1) // no second dialog
+  expect(await (await mountBand($)).find({ type: 'Text', text: /Decision router/ })).toBeUndefined()
   expect(steps[0].effort).toBe('xhigh')
 })
 
@@ -72,13 +70,12 @@ test('R13 R14 R16 threshold per value: only passing values are switched, each sh
   const clock = mock.clock(on, { now: 0 })
   const { steps, commands } = engine(on, { fetch: () => ({ value: reply(answers(0.9, 0.3)) }) })
   await start($)
-  const p = submit($)
-  await tick()
-  const ui = await mountBand($)
-  expect(await text(ui, /Suggested model: opus · confidence 90%/)).toBeDefined()
-  expect(await text(ui, /Effort kept: xhigh suggested at 30%, below 60%/)).toBeDefined()
-  await ui.press({ key: 'switch' })
-  await p
+  await routed($, 'switch')
+  expect(dialog.asked).toHaveLength(1)
+  expect(dialog.asked[0]).toContain('Suggested model: opus · confidence 90%')
+  expect(dialog.asked[0]).toContain('Effort kept: xhigh suggested at 30%, below 60%')
+  expect(dialog.asked[0].endsWith('Switch?')).toBe(true)
+  expect(dialog.labels).toEqual([['Switch', 'Keep']])
   await step($)
   expect(steps[0].model).toBe('opus')
   expect(steps[0].effort).toBe('medium') // effort did not pass: untouched
@@ -91,12 +88,9 @@ test('R14 model under the threshold is kept and says so; effort alone is switche
   mock.clock(on, { now: 0 })
   const { steps, commands } = engine(on, { env: { DECISION_MOD_MIN_CONFIDENCE: '0.7' }, fetch: () => ({ value: reply(answers(0.65, 0.7)) }) })
   await start($)
-  const p = submit($)
-  await tick()
-  const ui = await mountBand($)
-  expect(await text(ui, /Model kept: opus suggested at 65%, below 70%/)).toBeDefined() // boundary: 0.7 >= 0.7 passes for effort
-  await ui.press({ key: 'switch' })
-  await p
+  await routed($, 'switch')
+  expect(dialog.asked[0]).toContain('Model kept: opus suggested at 65%, below 70%') // boundary: 0.7 >= 0.7 passes for effort
+  expect(dialog.asked[0]).toContain('Suggested effort: xhigh · confidence 70%')
   await step($)
   expect([steps[0].model, steps[0].effort, commands]).toEqual(['claude-opus-5-5', 'xhigh', []])
 })
@@ -107,6 +101,7 @@ test('R13 R15 nothing passes: the prompt is not held; an informational band with
   await start($)
   await submit($) // returns without any click
   expect(timeline).toEqual(['core-submit'])
+  expect(dialog.asked).toEqual([]) // no dialog when nothing passes
   const ui = await mountBand($)
   expect(await ui.find({ key: 'switch' })).toBeUndefined()
   expect(await ui.find({ key: 'keep' })).toBeUndefined()
@@ -131,42 +126,43 @@ test('R15 Keep: nothing changes and no further call', async ($, on) => {
   expect([steps[0].model, steps[0].effort, commands, fetches.length, await routedState($)]).toEqual(['claude-opus-5-5', 'medium', [], 1, null])
 })
 
-test('R15a fake clock: a 3 s call leaves 7 s; the band is gone at 10 s from submission; a later click changes nothing', async ($, on) => {
+test('R15 Keep from the dialog: nothing changes', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
-  let release!: () => void
-  const { steps, timeline, commands } = engine(on, { fetch: () => new Promise(r => (release = () => r({ value: reply() }))) })
+  const { steps, commands } = engine(on)
   await start($)
-  const p = submit($)
-  await tick()
-  await clock.advance(2900) // the call takes 2.9 s (under the 3 s timeout)
-  release()
-  await tick()
-  const ui = await mountBand($)
-  expect(await ui.find({ key: 'switch' })).toBeDefined()
-  await clock.advance(7099) // 9.999 s from submission
-  expect(await ui.find({ key: 'switch' })).toBeDefined()
-  expect(timeline).toEqual([])
-  await clock.advance(1) // 10 s
-  await p
-  expect(timeline).toEqual(['core-submit'])
-  expect(await ui.find({ key: 'switch' })).toBeUndefined()
-  await ui.press({ key: 'switch' }).catch(() => undefined) // too late
+  await routed($, 'keep')
   await step($)
   await clock.advance(1)
   expect([steps[0].model, steps[0].effort, commands, await routedState($)]).toEqual(['claude-opus-5-5', 'medium', [], null])
 })
 
-test('R15 no click at all within the window: Keep applies', async ($, on) => {
+for (const answer of ['reject', 'Other text', 'switch']) {
+  test(`R15 dialog answered "${answer}" (dismiss/-p rejection, free text, wrong case) is Keep`, async ($, on) => {
+    mock.clock(on, { now: 0 })
+    const { steps, commands, timeline } = engine(on)
+    await start($)
+    dialog.answer = answer
+    await submit($)
+    await step($)
+    expect([timeline, steps[0].model, steps[0].effort, commands, await routedState($)]).toEqual([['core-submit'], 'claude-opus-5-5', 'medium', [], null])
+  })
+}
+
+test('R15a the dialog has no time limit: Switch after a minute still applies to the first request', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   const { steps, timeline } = engine(on)
   await start($)
+  let release!: () => void
+  dialog.gate = new Promise<void>(r => (release = r))
   const p = submit($)
   await tick()
-  await clock.advance(10_000)
+  await clock.advance(60_000)
+  expect(timeline).toEqual([]) // still held
+  release()
   await p
   expect(timeline).toEqual(['core-submit'])
   await step($)
-  expect(steps[0].effort).toBe('medium')
+  expect([steps[0].model, steps[0].effort]).toEqual(['opus', 'xhigh'])
 })
 
 test('R18 mode.manual true: no call, no band, no change', async ($, on) => {
@@ -190,12 +186,8 @@ test('R19a a stored mode effort: no effort suggestion, the model may still be sw
   const clock = mock.clock(on, { now: 0 })
   const { steps, commands } = engine(on, { mode: { effort: 'high' } })
   await start($)
-  const p = submit($)
-  await tick()
-  const ui = await mountBand($)
-  expect(await text(ui, /Effort kept: you already chose one in \/mode/)).toBeDefined()
-  await ui.press({ key: 'switch' })
-  await p
+  await routed($, 'switch')
+  expect(dialog.asked[0]).toContain('Effort kept: you already chose one in /mode')
   await step($)
   await clock.advance(1)
   expect([steps[0].model, steps[0].effort, commands, await routedState($)]).toEqual(['opus', 'medium', [{ command: 'model', args: 'opus' }], null])
@@ -353,11 +345,7 @@ test('R19c the user picks in /mode during the hold: the model switch and its def
   const clock = mock.clock(on, { now: 0 })
   const { steps, commands, mode } = engine(on)
   await start($)
-  const p = submit($)
-  await tick()
-  const ui = await mountBand($)
-  await ui.press({ key: 'switch' })
-  await p
+  await routed($, 'switch')
   mode.manual = true // picked in /mode before the first request
   await step($, 0)
   await clock.advance(1)

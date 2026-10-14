@@ -32,6 +32,7 @@ function engine(on: any, o: Opts = {}) {
   on('command.run', () => ({ text: '' }))
   for (const ev of ['fs.write', 'config.set', 'store.set', 'store.delete']) on(ev, () => (writes.push(ev), ok))
   on('agent.spawn', (_$: any, e: any) => (spawns.push(e), o.deny ? { deny: 'refused' } : { model: e.model ?? 'parent-model', ...(o.noAgentId ? {} : { agentId: `sub-${++n}` }) }))
+  on('tool.call', (_$: any, e: any) => ({ result: { answers: { [e.questions[0].question]: 'Switch' } }, text: 'Switch', ref: 1 }))
   on('agent.list', () => ({ value: o.roster ?? [] }))
   on('state.set', (_$: any, e: any) => ({ value: { isSet: true, version: 1 } }))
   on('state.get', (_$: any, e: any) => ({ value: { value: null, version: 0 } }))
@@ -234,11 +235,7 @@ test('a subagent step does not touch the main override or its baseline', async (
   mock.clock(on, { now: 0 })
   const { steps } = engine(on, { env: { DECISION_MOD_SUBAGENTS: 'off' } })
   await start($)
-  const p = $.prompt.submit({ text: 'refactor the whole parser', wait: false })
-  await tick()
-  const ui = await mountBand($)
-  await ui.press({ key: 'switch' })
-  await p
+  await $.prompt.submit({ text: 'refactor the whole parser', wait: false }) // the main dialog answers Switch
   await step($, { index: 0 }) // main: baseline medium, ours xhigh
   await step($, { agentId: 'sub-x', effort: 'low' }) // a subagent at another level
   await step($, { index: 1 }) // main again at medium: no /effort happened
