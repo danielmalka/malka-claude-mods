@@ -19,6 +19,7 @@ Then install the mods you want, one at a time:
 /plugin install cleanscreen@malka-claude-mods
 /plugin install mode@malka-claude-mods
 /plugin install permissions@malka-claude-mods
+/plugin install decision-router@malka-claude-mods
 /plugin install menu@malka-claude-mods
 ```
 
@@ -32,6 +33,7 @@ Then install the mods you want, one at a time:
 | [cleanscreen](plugins/cleanscreen/README.md) | Hides tool calls; shows Claude's text and a progress band above the prompt. | available |
 | [mode](plugins/mode/README.md) | Switch model and effort from a panel. | available |
 | [permissions](plugins/permissions/README.md) | Show the permission mode and pick the one new sessions start in. | available |
+| [decision-router](plugins/decision-router/README.md) | Suggests a model and effort for your first prompt via a decision model (sends a prompt excerpt to a third party; needs a key). | available |
 | [menu](plugins/menu/README.md) | Optional shared settings menu for whichever of these mods are installed. | available |
 
 ## License
@@ -61,6 +63,7 @@ Depois instale os mods que quiser, um de cada vez:
 /plugin install cleanscreen@malka-claude-mods
 /plugin install mode@malka-claude-mods
 /plugin install permissions@malka-claude-mods
+/plugin install decision-router@malka-claude-mods
 /plugin install menu@malka-claude-mods
 ```
 
@@ -74,6 +77,7 @@ Depois instale os mods que quiser, um de cada vez:
 | [cleanscreen](plugins/cleanscreen/README.md) | Oculta chamadas de ferramenta; mostra o texto do Claude e uma faixa de progresso acima do prompt. | disponível |
 | [mode](plugins/mode/README.md) | Escolhe modelo e esforço num painel. | disponível |
 | [permissions](plugins/permissions/README.md) | Mostra o modo de permissão e escolhe o modo em que novas sessões começam. | disponível |
+| [decision-router](plugins/decision-router/README.md) | Sugere modelo e esforço para o primeiro prompt via um modelo de decisão (envia um trecho do prompt a terceiros; exige chave). | disponível |
 | [menu](plugins/menu/README.md) | Menu de configurações compartilhado e opcional, para os mods instalados. | disponível |
 
 Cada mod é instalável sozinho. O `menu` é opcional e lista só os mods que você instalou.

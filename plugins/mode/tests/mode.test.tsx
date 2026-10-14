@@ -6,7 +6,7 @@ const menuPane = { plugin: 'mode', surface: 'terminal', component: 'Pane', reque
 const ownPane = { ...menuPane, requestId: 'mode-settings' }
 
 // what the engine would answer beneath the plugin
-function engine(on: any, opts: { store?: Record<string, unknown>; noConfig?: boolean; throwStore?: boolean } = {}) {
+function engine(on: any, opts: { store?: Record<string, unknown>; noConfig?: boolean; throwStore?: boolean; throwRouter?: boolean } = {}) {
   const store = opts.store ?? {}
   const toasts: string[] = []
   const opened: string[] = []
@@ -33,8 +33,9 @@ function engine(on: any, opts: { store?: Record<string, unknown>; noConfig?: boo
   const vals = new Map<string, unknown>()
   const ver = new Map<string, number>()
   on('state.get', (_$: any, e: any, next: any) => {
+    if (opts.throwRouter && e.plugin === 'decision-router') throw new Error('no such plugin')
     const k = `${e.plugin}.${e.key}`
-    return e.plugin === 'menu' ? { value: { value: vals.get(k), version: ver.get(k) ?? 0 } } : next(e)
+    return e.plugin === 'menu' || e.plugin === 'decision-router' ? { value: { value: vals.get(k), version: ver.get(k) ?? 0 } } : next(e)
   })
   on('state.set', (_$: any, e: any, next: any) => (vals.set(`${e.plugin}.${e.key}`, e.value), next(e)))
   on('session.start', (_$: any, e: any) => ({ cwd: e.cwd }))
@@ -179,6 +180,51 @@ test("the user's own /effort drops our override", async ($, on) => {
   expect(steps[1].effort).toBe('low')
   expect(store.effort).toBeUndefined()
   expect(toasts).toContain('Effort: following your /effort low')
+})
+
+const stepAt = ($: any, index: number, effort: string) => drain($.turn.step({ turnId: 't', index, model: 'claude-opus-5-5', effort, messageCount: 2 }))
+
+test('(a) decision-router: an effort equal to the routed one is not the engine level', async ($, on) => {
+  const { steps, store, toasts, state, setState } = engine(on, { store: { effort: 'max' } })
+  await start($)
+  await drain(step($)) // engine at medium
+  setState('decision-router.effort', 'low')
+  await stepAt($, 1, 'low')
+  expect(toasts).toEqual([])
+  expect(store.effort).toBe('max')
+  expect(steps[1].effort).toBe('max')
+  expect(state('mode.sessionEffort')).toBe('medium')
+})
+
+test('(b) decision-router: an effort different from the routed one is still the users', async ($, on) => {
+  const { store, toasts, setState } = engine(on, { store: { effort: 'max' } })
+  await start($)
+  await drain(step($))
+  setState('decision-router.effort', 'low')
+  await stepAt($, 1, 'high')
+  expect(toasts).toContain('Effort: following your /effort high')
+  expect(store.effort).toBeUndefined()
+})
+
+test('(c) decision-router: absent state or a failing read behaves as before', async ($, on) => {
+  const { toasts, store } = engine(on, { store: { effort: 'max' }, throwRouter: true })
+  await start($)
+  await drain(step($))
+  await stepAt($, 1, 'low')
+  expect(toasts).toContain('Effort: following your /effort low')
+  expect(store.effort).toBeUndefined()
+})
+
+test('(d) decision-router: a routed step does not move the last seen engine level', async ($, on) => {
+  const { toasts, store, setState } = engine(on, { store: { effort: 'max' } })
+  await start($)
+  await drain(step($)) // seen: medium
+  setState('decision-router.effort', 'low')
+  await stepAt($, 1, 'low') // routed: seen stays medium
+  setState('decision-router.effort', null)
+  await stepAt($, 2, 'medium') // same as seen: not a /effort
+  expect(toasts).toEqual([])
+  expect(store.effort).toBe('max')
 })
 
 test('a model without change is not marked manual', async ($, on) => {

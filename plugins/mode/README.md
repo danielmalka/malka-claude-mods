@@ -4,7 +4,7 @@ Pick the model and the reasoning effort from one small pane, or from `/mode`. It
 
 - `/mode` opens the pane (model: Fable, Opus, Sonnet, Haiku or Claude Code's default; effort: low, medium, high, xhigh, max or default).
 - `/mode model <alias>` switches the model (`fable`, `opus`, `sonnet`, `haiku`, `default`) through Claude Code's own `/model`.
-- `/mode effort <level>` sets the effort of every request of the main conversation (subagents are left alone). The level is remembered across sessions; levels a model does not support are handled by Claude Code. It never writes your `/config`. If you later change the effort yourself with `/effort`, that newer choice wins and the mod drops its override. `/mode effort default` removes the override.
+- `/mode effort <level>` sets the effort of every request of the main conversation (subagents are left alone). The level is remembered across sessions; levels a model does not support are handled by Claude Code. It never writes your `/config`. If you later change the effort yourself with `/effort`, that newer choice wins and the mod drops its override. `/mode effort default` removes the override. A level that the optional `decision-router` mod put on the step is not mistaken for your `/effort`.
 - It publishes `mode.manual` (true once you picked a model or an effort in the current session) for other mods to read.
 
 Works on its own, or together with the optional `menu` mod: then the menu lists "Mode" (for example `Opus 5.5 · effort high`) and shows this page in its pane. It never writes `settings.json`.
@@ -37,7 +37,7 @@ Escolha o modelo e o esforço de raciocínio num painel pequeno ou com `/mode`. 
 
 - `/mode` abre o painel (modelo: Fable, Opus, Sonnet, Haiku ou o padrão do Claude Code; esforço: low, medium, high, xhigh, max ou default).
 - `/mode model <alias>` troca o modelo (`fable`, `opus`, `sonnet`, `haiku`, `default`) pelo `/model` do próprio Claude Code.
-- `/mode effort <nível>` define o esforço de cada requisição da conversa principal (subagentes ficam de fora), lembrado entre sessões; níveis que o modelo não suporta são tratados pelo Claude Code. Nunca escreve no seu `/config`; se você mudar o esforço com `/effort`, a sua escolha vence e o override é descartado. `/mode effort default` remove o override.
+- `/mode effort <nível>` define o esforço de cada requisição da conversa principal (subagentes ficam de fora), lembrado entre sessões; níveis que o modelo não suporta são tratados pelo Claude Code. Nunca escreve no seu `/config`; se você mudar o esforço com `/effort`, a sua escolha vence e o override é descartado. `/mode effort default` remove o override. Um nível que o mod opcional `decision-router` colocou no passo não é confundido com o seu `/effort`.
 - Publica `mode.manual` (verdadeiro quando você escolheu modelo ou esforço na sessão atual) para outros mods lerem.
 
 Funciona sozinho ou com o mod opcional `menu` (que lista "Mode" e mostra a página no seu painel). Nunca escreve no `settings.json`.
