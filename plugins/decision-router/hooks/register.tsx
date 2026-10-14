@@ -32,7 +32,8 @@ const modeHoldsEffort = async ($: EngineInterface) => {
 }
 
 // What an accepted Switch put in force; null until then.
-let plan: { model?: Model; effort?: Effort; modelPending: boolean } | null = null
+type Plan = { modelId?: string; effort?: Effort; modelPending: boolean }
+let plan: Plan | null = null
 let done = false // the first prompt was handled (R4/R24)
 type Band = { lines: string[]; canSwitch: boolean; answer: ((v: 'switch' | 'keep') => void) | null }
 let openBand: Band | null = null
@@ -100,10 +101,14 @@ export const register: Register = on => {
         $.ui.toast(`Decision router: ${r.reason}; nothing changed`) // R20
         return next(e)
       }
+      // the suggested model may already be the one running: nothing to switch, only the effort can be offered
+      const current = await $.session.model().catch(() => '')
+      const modelCurrent = current.includes(`-${r.model}-`)
       const offer = {
-        model: r.modelConfidence >= cfg.minConfidence,
+        model: !modelCurrent && r.modelConfidence >= cfg.minConfidence,
         effort: !effortHeld && r.effortConfidence >= cfg.minConfidence,
         effortHeld,
+        modelCurrent: modelCurrent && r.modelConfidence >= cfg.minConfidence,
       }
       if (mine !== epoch) return next(e)
       const lines = bandLines(r, offer, cfg.minConfidence)
@@ -128,14 +133,45 @@ export const register: Register = on => {
       // Anything but the exact label 'Switch' (Keep, free text, dismiss, -p) is Keep (R15).
       let answer: 'switch' | 'keep' = 'keep'
       try {
-        const chosen = await $.ui.ask(`Decision router suggests for this session:\n${lines.join('\n')}\nSwitch?`, ['Switch', 'Keep'])
+        const chosen = await $.ui.ask(`Decision router suggests for this session:\n${lines.join('\n')}\n${offer.model ? 'Switch also makes the model your default for new sessions.\n' : ''}Switch?`, ['Switch', 'Keep'])
         if (chosen === 'Switch') answer = 'switch'
       } catch {}
       if (answer === 'switch' && mine === epoch) {
-        const next_ = { model: offer.model ? r.model : undefined, effort: offer.effort ? r.effort : undefined, modelPending: offer.model }
-        // publish first: if it fails nothing stays applied
-        if (next_.effort) await update($, routedEffort, () => next_.effort ?? null)
-        plan = next_
+        // The user may have picked in /mode while the dialog was open: that choice wins, nothing is switched.
+        const manual = await manualSet($)
+        const held = await modeHoldsEffort($)
+        const effort = offer.effort && !manual && !held ? r.effort : undefined
+        const wantModel = offer.model && !manual
+        if (mine !== epoch) return next(e)
+        // Fallible steps first, the irreversible one (the model, which persists) last.
+        const mine_: Plan = { effort, modelPending: false }
+        if (effort) {
+          try {
+            await update($, routedEffort, () => effort)
+          } catch (error) {
+            mine_.effort = undefined
+            await update($, routedEffort, () => null).catch(() => undefined)
+            $.ui.toast(`Decision router: effort not applied: ${String(error)}`)
+          }
+        }
+        plan = mine_
+        if (wantModel && mine === epoch) {
+          // turn.step needs a resolved id: set the model like /model does (config.set takes the alias; /model itself is
+          // refused inside prompt.submit) and read the id back. A failure leaves the model alone; the effort still applies.
+          try {
+            const before = await $.session.model()
+            const set = await $.config.set({ key: 'model', value: r.model })
+            if (set.deny !== undefined) throw new Error(set.deny)
+            const id = await $.session.model()
+            if (!id || id === before) throw new Error('the session model did not change')
+            if (plan === mine_) {
+              mine_.modelId = id
+              mine_.modelPending = true
+            }
+          } catch (error) {
+            $.ui.toast(`Decision router: model not switched: ${error instanceof Error ? error.message : String(error)}`)
+          }
+        }
       }
     } catch (error) {
       if (mine === epoch) {
@@ -302,14 +338,11 @@ export const register: Register = on => {
     // the user may have picked in /mode during the hold: that choice wins, drop the model switch
     if (plan.modelPending && e.index === 0 && (await manualSet($))) {
       plan.modelPending = false
-      plan.model = undefined
+      plan.modelId = undefined
     }
     if (plan.modelPending && e.index === 0) {
-      const alias = plan.model as Model
       plan.modelPending = false
-      out = { ...out, model: alias }
-      // /model cannot run inside a hook: right after, as `mode` does
-      $.clock.after(0, () => void $.command.run({ command: 'model', args: alias }).catch(error => $.ui.toast(`Decision router: could not switch the model: ${String(error)}`)))
+      out = { ...out, model: plan.modelId as string } // request 0 carries the resolved id, never the alias
     }
     if (plan.effort !== undefined) {
       // Our hook sits above `mode`, so e.effort is the engine's own level, whatever we wrote below on earlier steps.

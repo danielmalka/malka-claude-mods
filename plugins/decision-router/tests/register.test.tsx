@@ -75,12 +75,13 @@ test('R13 R14 R16 threshold per value: only passing values are switched, each sh
   expect(dialog.asked[0]).toContain('Suggested model: opus · confidence 90%')
   expect(dialog.asked[0]).toContain('Effort kept: xhigh suggested at 30%, below 60%')
   expect(dialog.asked[0].endsWith('Switch?')).toBe(true)
+  expect(dialog.asked[0]).toContain('Switch also makes the model your default for new sessions.')
   expect(dialog.labels).toEqual([['Switch', 'Keep']])
   await step($)
-  expect(steps[0].model).toBe('opus')
+  expect(steps[0].model).toBe('claude-opus-9-9') // the resolved id
   expect(steps[0].effort).toBe('medium') // effort did not pass: untouched
   await clock.advance(1)
-  expect(commands).toEqual([{ command: 'model', args: 'opus' }])
+  expect(commands).toEqual([]) // no /model anywhere
   expect(await routedState($)).toBe(null)
 })
 
@@ -162,7 +163,7 @@ test('R15a the dialog has no time limit: Switch after a minute still applies to 
   await p
   expect(timeline).toEqual(['core-submit'])
   await step($)
-  expect([steps[0].model, steps[0].effort]).toEqual(['opus', 'xhigh'])
+  expect([steps[0].model, steps[0].effort]).toEqual(['claude-opus-9-9', 'xhigh'])
 })
 
 test('R18 mode.manual true: no call, no band, no change', async ($, on) => {
@@ -190,27 +191,26 @@ test('R19a a stored mode effort: no effort suggestion, the model may still be sw
   expect(dialog.asked[0]).toContain('Effort kept: you already chose one in /mode')
   await step($)
   await clock.advance(1)
-  expect([steps[0].model, steps[0].effort, commands, await routedState($)]).toEqual(['opus', 'medium', [{ command: 'model', args: 'opus' }], null])
+  expect([steps[0].model, steps[0].effort, commands, await routedState($)]).toEqual(['claude-opus-9-9', 'medium', [], null])
 })
 
-test('R19c switch: model rewritten on request 0 and /model deferred; effort override on every main step, subagents untouched', async ($, on) => {
+test('R19c switch: config.set with the alias, request 0 carries the resolved id, no /model; effort override on every main step, subagents untouched', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
-  const { steps, commands, toasts } = engine(on)
+  const { steps, commands, configSets } = engine(on)
   await start($)
   await routed($, 'switch')
-  expect(commands).toEqual([]) // nothing runs inside a hook
+  expect(configSets).toEqual([{ key: 'model', value: 'opus' }]) // the alias goes to config.set
+  expect(commands).toEqual([])
   expect(await routedState($)).toBe('xhigh') // published while active
   await step($, 0)
-  expect(steps[0].model).toBe('opus')
-  expect(commands).toEqual([])
+  expect(steps[0].model).toBe('claude-opus-9-9') // never the alias
   await clock.advance(1)
-  expect(commands).toEqual([{ command: 'model', args: 'opus' }])
+  expect(commands).toEqual([])
   await step($, 1)
   await step($, 2, { model: 'claude-opus-5-5' })
   await step($, 0, { agentId: 'sub-1' })
-  expect(steps.map((s: any) => [s.model, s.effort])).toEqual([['opus', 'xhigh'], ['claude-opus-5-5', 'xhigh'], ['claude-opus-5-5', 'xhigh'], ['claude-opus-5-5', 'medium']])
+  expect(steps.map((s: any) => [s.model, s.effort])).toEqual([['claude-opus-9-9', 'xhigh'], ['claude-opus-5-5', 'xhigh'], ['claude-opus-5-5', 'xhigh'], ['claude-opus-5-5', 'medium']])
   expect(await routedState($)).toBe('xhigh')
-  expect(commands).toHaveLength(1) // /model runs once
 })
 
 test('R19c release 1: mode.manual becomes true', async ($, on) => {
@@ -278,7 +278,7 @@ test('R19c release 3c: X to Y to X is caught at Y', async ($, on) => {
   expect(steps.map((s: any) => s.effort)).toEqual(['xhigh', 'high', 'medium'])
 })
 
-test('R19c release 3d: after the model changes (deferred /model), the level is re-baselined and a later /effort still drops the override', async ($, on) => {
+test('R19c release 3d: after the model changes (config.set), the level is re-baselined and a later /effort still drops the override', async ($, on) => {
   const { steps } = engine(on)
   mock.clock(on, { now: 0 })
   await start($)
@@ -309,7 +309,7 @@ test('R20 failed call: toast, nothing applied, no band, no retry', async ($, on)
   expect([fetches.length, steps[0].effort, commands]).toEqual([1, 'medium', []])
 })
 
-test('R3 R23 a switch writes nothing (config, store, files) and sends only the prompt as state', async ($, on) => {
+test('R3 R23 a switch writes nothing but the model config.set (no store, no files) and sends only the prompt as state', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   const { writes, fetches } = engine(on)
   await start($)
@@ -330,24 +330,87 @@ test('R3 R23 no permission or tool-check hook: tool.check passes through unchang
   expect([r.decision, r.reason, r.hook]).toEqual(['ask', 'core says ask', undefined])
 })
 
-test('a failing publish leaves nothing applied: toast, no model rewrite, no override', async ($, on) => {
+test('a failing effort publish: the model (set last) still switches and request 0 carries it; the toast names the effort, never "nothing changed"', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
-  const { toasts, steps, commands } = engine(on, { throwSet: true })
+  const { toasts, steps, commands, configSets } = engine(on, { throwSet: true })
   await start($)
   await routed($, 'switch')
   await step($)
   await clock.advance(1)
-  expect(toasts.some(t => /nothing changed/.test(t))).toBe(true)
-  expect([steps[0].model, steps[0].effort, commands]).toEqual(['claude-opus-5-5', 'medium', []])
+  expect(toasts.some(t => /effort not applied/.test(t))).toBe(true)
+  expect(toasts.some(t => /nothing changed/.test(t))).toBe(false)
+  expect([configSets.length, steps[0].model, steps[0].effort, commands]).toEqual([1, 'claude-opus-9-9', 'medium', []])
 })
 
-test('R19c the user picks in /mode during the hold: the model switch and its deferred /model are dropped, so is the effort', async ($, on) => {
+test('R19c the user picks in /mode while the dialog is open: no config.set, no model switch, no effort', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
-  const { steps, commands, mode } = engine(on)
+  const { steps, commands, mode, configSets } = engine(on)
   await start($)
-  await routed($, 'switch')
-  mode.manual = true // picked in /mode before the first request
+  let release!: () => void
+  dialog.gate = new Promise<void>(r => (release = r))
+  const p = submit($)
+  await tick()
+  mode.manual = true // picked in /mode while the dialog is open
+  release()
+  await p
   await step($, 0)
   await clock.advance(1)
-  expect([steps[0].model, steps[0].effort, commands, await routedState($)]).toEqual(['claude-opus-5-5', 'medium', [], null])
+  expect([configSets, steps[0].model, steps[0].effort, commands, await routedState($)]).toEqual([[], 'claude-opus-5-5', 'medium', [], null])
+})
+
+test('R19a/R19c mode stores an effort while the dialog is open: the model switches, the effort does not', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  const { steps, mode, configSets } = engine(on)
+  await start($)
+  let release!: () => void
+  dialog.gate = new Promise<void>(r => (release = r))
+  const p = submit($)
+  await tick()
+  mode.effort = 'low'
+  release()
+  await p
+  await step($, 0)
+  expect([configSets.length, steps[0].model, steps[0].effort, await routedState($)]).toEqual([1, 'claude-opus-9-9', 'medium', null])
+})
+
+for (const [name, opts] of [['config.set denied', { configDeny: true }], ['config.set throws', { configThrow: true }], ['the session model did not change', { configSticky: true }]] as const) {
+  test(`${name}: no model rewrite, a toast, the effort still applies`, async ($, on) => {
+    const clock = mock.clock(on, { now: 0 })
+    const { steps, commands, toasts } = engine(on, opts)
+    await start($)
+    await routed($, 'switch')
+    await step($, 0)
+    await clock.advance(1)
+    expect(toasts.filter(t => /model not switched/.test(t))).toHaveLength(1)
+    expect([steps[0].model, steps[0].effort, commands, await routedState($)]).toEqual(['claude-opus-5-5', 'xhigh', [], 'xhigh'])
+  })
+}
+
+test('Keep never calls config.set', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  const { configSets, writes } = engine(on)
+  await start($)
+  await routed($, 'keep')
+  expect([configSets, writes]).toEqual([[], []])
+})
+
+test('the suggested model is the one running: no config.set, no failure toast, the dialog offers only the effort', async ($, on) => {
+  const { steps, toasts, configSets, commands } = engine(on, { running: 'claude-opus-5-5' }) // runs opus, the decision model says opus
+  mock.clock(on, { now: 0 })
+  await start($)
+  await routed($, 'switch')
+  expect(dialog.asked[0]).toContain('Model: opus (current) · confidence 90%')
+  expect(dialog.asked[0]).toContain('Suggested effort: xhigh · confidence 80%')
+  await step($, 0)
+  expect([configSets, toasts, commands, steps[0].model, steps[0].effort]).toEqual([[], [], [], 'claude-opus-5-5', 'xhigh'])
+})
+
+test('the suggested model is the one running and the effort does not pass: informational band, no dialog, no config.set', async ($, on) => {
+  const { configSets, toasts, timeline } = engine(on, { running: 'claude-opus-5-5', fetch: () => ({ value: reply(answers(0.9, 0.3)) }) })
+  mock.clock(on, { now: 0 })
+  await start($)
+  await submit($)
+  expect([dialog.asked, configSets, toasts, timeline]).toEqual([[], [], [], ['core-submit']])
+  const ui = await mountBand($)
+  expect(await text(ui, /Model: opus \(current\) · confidence 90%/)).toBeDefined()
 })

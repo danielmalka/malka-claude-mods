@@ -23,7 +23,7 @@ test('session.start with the dialog open: the old answer applies nothing, the ne
   await routed($, 'switch') // the new session's first prompt is routed again
   expect(fetches).toHaveLength(2)
   await step($, 0)
-  expect(steps[1].model).toBe('opus')
+  expect(steps[1].model).toBe('claude-opus-9-9')
 })
 
 test('two prompts in quick succession: one decision call, one dialog', async ($, on) => {
