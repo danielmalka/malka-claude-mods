@@ -4,6 +4,7 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 import type {} from '../types/menu'
 import type { MenuEntry, StatusSnapshot } from '../types'
 import { configDir, moveStatusLine, parseSettings, type Settings } from './settings'
+import { checkContext, resetContextToasts } from './context-toasts'
 import { LIMIT_LABELS } from './status'
 import { statusPage, statusRow } from './status-line'
 
@@ -178,6 +179,8 @@ const openTasks = async ($: EngineInterface) => {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    resetContextToasts()
+    void checkContext($)
     // Default off: only a stored "on" turns it on.
     const isOn = (await $.store.get('isOn')) === true
     await update($, isOnAtom, () => isOn)
@@ -245,6 +248,18 @@ export const register: Register = on => {
       button,
       onPill: () => openTasks($),
     })
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    const r = await next(e)
+    void checkContext($)
+    return r
+  })
+
+  // fire-and-forget: reading usage never delays the spawn
+  on('agent.spawn', ($, e, next) => {
+    void checkContext($)
+    return next(e)
   })
 
   // The main loop's responses keep the prompt cache warm; subagents' do not.

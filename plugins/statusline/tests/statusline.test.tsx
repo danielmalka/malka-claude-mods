@@ -10,7 +10,7 @@ const hint = { plugin: 'statusline', surface: 'terminal', component: 'PromptHint
 const menuPane = (panel: string) => ({ plugin: 'statusline', surface: 'terminal', component: 'Pane', requestId: 'mods-menu', props: { bodyColumns: 60, scroll: { bodyRows: 10 }, view: {} } }) as any
 
 // what the engine would answer beneath the plugin
-function engine(on: any, opts: { store?: Record<string, unknown>; files?: Record<string, string>; menu?: Record<string, unknown>; noUsage?: boolean } = {}) {
+function engine(on: any, opts: { store?: Record<string, unknown>; files?: Record<string, string>; menu?: Record<string, unknown>; noUsage?: boolean; pct?: () => number } = {}) {
   const store = opts.store ?? {}
   const toasts: string[] = []
   const opened: string[] = []
@@ -25,7 +25,7 @@ function engine(on: any, opts: { store?: Record<string, unknown>; files?: Record
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('session.cwd', () => ({ value: '/work/proj' }))
   on('session.usage', () => (opts.noUsage ? Promise.reject(new Error('no usage yet')) : {
-    value: { context: { percent: 41, tokens: 82_000, window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 30, resetsAt: new Date(3_600_000).toISOString() }] },
+    value: { context: { percent: opts.pct ? opts.pct() : 41, tokens: 82_000, window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 30, resetsAt: new Date(3_600_000).toISOString() }] },
   }))
   on('process.run', () => ({ value: { exitCode: 0, stdout: 'main\n', stderr: '' } }))
   // the host's named values: the plugin's own writes land here, and a test plays the menu mod by writing its keys
@@ -273,4 +273,82 @@ test('the menuEntry and the mode flip in an order that keeps summary on <=> our 
   await run($, 'on')
   await run($, 'off')
   expect(seen).toEqual(['isOn=true', 'menuEntry=on', 'menuEntry=off', 'isOn=false'])
+})
+
+// context-threshold toasts (the check is fire-and-forget: let it settle)
+const ctx = (t: string[]) => t.filter(x => x.startsWith('Context at'))
+const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve() }
+const begin = async ($: any) => { await $.session.start({ cwd: '/work/proj', surface: 'terminal', isInteractive: true }); await settle() }
+const done = async ($: any) => { const r = await $.turn.complete({ turnId: 't', answer: '', reason: 'answer' } as any).catch(() => undefined); await settle(); return r }
+
+test('context toasts: 59% none, 60% one, 80% one more, no repeats, new session resets (line off)', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  let pct = 59
+  on('turn.complete', () => ({ text: 'stub' }))
+  const { toasts, store } = engine(on, { pct: () => pct })
+  await begin($)
+  expect(store.isOn).toBeUndefined()
+  expect(await done($)).toEqual({ text: 'stub' })
+  expect(ctx(toasts)).toEqual([])
+  pct = 60.4
+  await done($)
+  await done($)
+  expect(ctx(toasts)).toEqual(['Context at 60% - consider /compact at the next pause'])
+  pct = 85
+  await done($)
+  await done($)
+  expect(ctx(toasts)).toEqual(['Context at 60% - consider /compact at the next pause', 'Context at 85% - time to /compact'])
+  pct = 61
+  await begin($)
+  expect(ctx(toasts)[2]).toBe('Context at 61% - consider /compact at the next pause')
+  expect(ctx(toasts)).toHaveLength(3)
+})
+
+test('context toasts: first reading at 85% shows only the 80 message; 60 is then warned', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  let pct = 85
+  on('turn.complete', () => ({ text: '' }))
+  const { toasts } = engine(on, { pct: () => pct })
+  await begin($)
+  pct = 90
+  await done($)
+  expect(ctx(toasts)).toEqual(['Context at 85% - time to /compact'])
+})
+
+test('context toasts: null percent gives no toast', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  on('turn.complete', () => ({ text: '' }))
+  const { toasts } = engine(on, { pct: () => null as any })
+  await begin($)
+  await done($)
+  expect(ctx(toasts)).toEqual([])
+})
+
+test('context toasts: usage throwing breaks nothing; agent.spawn passes through and can be the first trigger', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  on('turn.complete', () => ({ text: '' }))
+  let seen = 0
+  on('agent.spawn', (_$: any, e: any) => (seen++, { model: 'm', agentId: 'sub-1' }))
+  const bad = engine(on, { noUsage: true })
+  await begin($)
+  await done($)
+  const r = await $.agent.spawn({ prompt: 'x', description: 'd' })
+  await settle()
+  expect(seen).toBe(1)
+  expect(r.agentId).toBe('sub-1')
+  expect(ctx(bad.toasts)).toEqual([])
+})
+
+test('context toasts: agent.spawn as first trigger at 65% gives exactly one toast', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  let pct = 50
+  on('agent.spawn', () => ({ model: 'm', agentId: 'sub-1' }))
+  const { toasts } = engine(on, { pct: () => pct })
+  await begin($)
+  pct = 65
+  await $.agent.spawn({ prompt: 'x', description: 'd' })
+  await settle()
+  await $.agent.spawn({ prompt: 'x', description: 'd' })
+  await settle()
+  expect(ctx(toasts)).toEqual(['Context at 65% - consider /compact at the next pause'])
 })
