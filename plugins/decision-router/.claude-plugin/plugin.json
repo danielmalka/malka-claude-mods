@@ -1,6 +1,6 @@
 {
   "name": "decision-router",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Asks a decision model which Claude model and effort fit your prompt. Does nothing until DECISION_MOD_KEY is set.",
   "author": {
     "name": "danielmalka"

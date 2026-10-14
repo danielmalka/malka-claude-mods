@@ -12,9 +12,9 @@ Asks a decision model which Claude model (haiku, sonnet, opus) and which effort 
 ## What it does
 
 - On the first non-slash prompt of a new session (not a resumed one) it asks the decision model which model and effort fit. Later prompts of the session trigger no call.
-- A dialog shows the suggested model and effort, each with its confidence, and holds the prompt until you answer. **Switch** applies them to the current request. **Keep**, closing the dialog, or a non-interactive run (`-p`) keeps everything as it was.
+- A dialog shows the suggested model and effort, each with its confidence, and holds the prompt until you answer. **Switch** applies them to the current request. Switch also makes the chosen model your default for new sessions, as `/model` does; change it back with `/model`. **Keep**, closing the dialog, or a non-interactive run (`-p`) keeps everything as it was.
 - A value whose confidence is under `DECISION_MOD_MIN_CONFIDENCE` is shown and kept, not offered. If neither value passes, no dialog is shown: the prompt goes at once and a small informational band disappears by itself after 10 s.
-- The effort is applied per request. The mod never runs `/effort` and writes no settings.
+- The effort is applied per request. The mod never runs `/effort`; the only setting it writes is the default model, and only when you press Switch.
 - A call that fails or takes longer than 3 s keeps the current model and effort and shows a toast.
 - Subagents follow `DECISION_MOD_SUBAGENTS`: `ask` shows one band per spawn (Switch/Keep buttons, held up to 10 s; no click means the subagent runs as spawned), `auto` applies the values that pass and shows a toast, `off` routes nothing. Spawns with an explicit model, forks and teammates are never touched.
 - `auto` caution: text inside a subagent prompt can steer the suggestion (for example toward opus/max), and `auto` applies it without asking. Prefer `ask` if cost matters.
@@ -50,7 +50,7 @@ Works on its own. Together with `mode`, a model or effort you picked in `mode` a
 /plugin uninstall decision-router@malka-claude-mods
 ```
 
-The mod writes no settings, so nothing else needs undoing. Unset `DECISION_MOD_KEY` to stop any call without uninstalling.
+The only thing the mod ever writes is the default model after a Switch (undo it with `/model`), so nothing else needs undoing. Unset `DECISION_MOD_KEY` to stop any call without uninstalling.
 
 ## Development
 
@@ -72,9 +72,9 @@ Pergunta a um modelo de decisão qual modelo Claude (haiku, sonnet, opus) e qual
 ## O que faz
 
 - No primeiro prompt que não seja comando `/` de uma sessão nova (não retomada), pergunta ao modelo de decisão qual modelo e esforço servem. Os prompts seguintes não geram chamada.
-- Um diálogo mostra o modelo e o esforço sugeridos, cada um com sua confiança, e retém o prompt até você responder. **Switch** aplica à requisição atual. **Keep**, fechar o diálogo ou uma execução não interativa (`-p`) mantém tudo como estava.
+- Um diálogo mostra o modelo e o esforço sugeridos, cada um com sua confiança, e retém o prompt até você responder. **Switch** aplica à requisição atual. Switch também torna o modelo escolhido o seu padrão para novas sessões, como o `/model` faz; volte com `/model`. **Keep**, fechar o diálogo ou uma execução não interativa (`-p`) mantém tudo como estava.
 - Um valor com confiança abaixo de `DECISION_MOD_MIN_CONFIDENCE` é mostrado e mantido, não oferecido. Se nenhum dos dois passar, não há diálogo: o prompt segue na hora e uma pequena faixa informativa some sozinha após 10 s.
-- O esforço é aplicado por requisição. O mod nunca roda `/effort` e não grava configuração.
+- O esforço é aplicado por requisição. O mod nunca roda `/effort`; a única configuração que grava é o modelo padrão, e só quando você aperta Switch.
 - Chamada que falha ou passa de 3 s mantém modelo e esforço atuais e mostra um aviso.
 - Subagentes seguem `DECISION_MOD_SUBAGENTS`: `ask` mostra uma faixa por spawn (botões Switch/Keep, retido até 10 s; sem clique o subagente roda como foi criado), `auto` aplica os valores que passam e mostra um aviso, `off` não roteia nada. Spawns com modelo explícito, forks e teammates nunca são alterados.
 - Cuidado com `auto`: texto dentro do prompt de um subagente pode direcionar a sugestão (por exemplo para opus/max), e `auto` aplica sem perguntar. Prefira `ask` se custo importa.
@@ -98,4 +98,4 @@ Um valor inválido volta ao padrão, com um aviso por sessão.
 Funciona sozinho. Junto com o `mode`, o modelo ou esforço que você escolheu no `mode` sempre vence, e um esforço guardado no `mode` significa que nenhum esforço é sugerido. Instale o `mode` atualizado (0.1.1 ou superior) para que um nível colocado por este mod não seja confundido com o seu `/effort`.
 
 **Instalar:** `/plugin marketplace add danielmalka/malka-claude-mods` e depois `/plugin install decision-router@malka-claude-mods`.
-**Desinstalar:** `/plugin uninstall decision-router@malka-claude-mods`. O mod não grava configuração, então não há mais nada a desfazer. Remova `DECISION_MOD_KEY` para parar qualquer chamada sem desinstalar.
+**Desinstalar:** `/plugin uninstall decision-router@malka-claude-mods`. A única coisa que o mod grava é o modelo padrão após um Switch (desfaça com `/model`), então não há mais nada a desfazer. Remova `DECISION_MOD_KEY` para parar qualquer chamada sem desinstalar.

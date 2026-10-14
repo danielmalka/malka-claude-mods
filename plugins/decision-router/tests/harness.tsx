@@ -17,7 +17,7 @@ export const reply = (a = answers(0.9, 0.8)) => ({ status: 200, ok: true, header
 // 'reject' makes the dialog reject (dismiss, -p); `gate` holds the dialog open until it is resolved.
 export const dialog = { answer: 'Switch', asked: [] as string[], labels: [] as string[][], gate: null as null | Promise<void> }
 export let vals = new Map<string, unknown>()
-export type Opts = { env?: Record<string, string>; turns?: number; mode?: Record<string, unknown>; fetch?: (e: any) => any; throwMode?: boolean; throwSet?: boolean }
+export type Opts = { running?: string; configDeny?: boolean; configThrow?: boolean; configSticky?: boolean; env?: Record<string, string>; turns?: number; mode?: Record<string, unknown>; fetch?: (e: any) => any; throwMode?: boolean; throwSet?: boolean }
 // What the engine answers beneath the plugin. `mode.*` state is faked (the kit loads one plugin); decision-router.* is the real atom.
 export function engine(on: any, o: Opts = {}) {
   const env = { DECISION_MOD_KEY: KEY, ...o.env }
@@ -28,6 +28,16 @@ export function engine(on: any, o: Opts = {}) {
   const steps: any[] = []
   const timeline: string[] = []
   const writes: string[] = []
+  const configSets: any[] = []
+  let model = o.running ?? 'claude-haiku-5-5' // the session's model (the decision model suggests opus); config.set to an alias resolves it to claude-<alias>-9-9
+  on('session.model', () => ({ value: model }))
+  on('config.set', (_$: any, e: any) => {
+    configSets.push({ key: e.key, value: e.value })
+    if (o.configThrow) throw new Error('config down')
+    if (o.configDeny) return { deny: 'config refused' }
+    if (!o.configSticky) model = `claude-${e.value}-9-9`
+    return { value: e.value }
+  })
   vals = new Map()
   on('env.get', (_$: any, e: any) => ({ value: env[e.name ?? e.key] }))
   on('http.fetch', (_$: any, e: any) => (fetches.push(e), o.fetch ? o.fetch(e) : { value: reply() }))
@@ -36,7 +46,7 @@ export function engine(on: any, o: Opts = {}) {
   on('prompt.submit', (_$: any, e: any) => (timeline.push('core-submit'), { text: e.text }))
   on('ui.toast', (_$: any, e: any) => (toasts.push(e.text), ok))
   on('command.run', (_$: any, e: any) => (commands.push({ command: e.command, args: e.args }), { text: '' }))
-  for (const ev of ['fs.write', 'config.set', 'store.set', 'store.delete']) on(ev, (_$: any, e: any) => (writes.push(ev), ok))
+  for (const ev of ['fs.write', 'store.set', 'store.delete']) on(ev, (_$: any, e: any) => (writes.push(ev), ok))
   dialog.answer = 'Switch'
   dialog.asked = []
   dialog.labels = []
@@ -64,7 +74,7 @@ export function engine(on: any, o: Opts = {}) {
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
-  return { fetches, toasts, commands, steps, timeline, writes, mode }
+  return { fetches, toasts, commands, steps, timeline, writes, mode, configSets }
 }
 
 export const start = ($: any) => $.session.start({ cwd: '/work/proj', surface: 'terminal', isInteractive: true })
