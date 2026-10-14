@@ -153,3 +153,29 @@ test('a member panel whose entry disappeared draws main', async ($, on) => {
   const ui = await $.ui.mount(pane)
   expect(await ui.find({ key: 'open-mode' })).toBeDefined()
 })
+
+test('four members keep the order 1 to 4, permissions last', async ($, on) => {
+  engine(on, {
+    'permissions.menuEntry': entry('Permissions', 'new sessions: ask', 4),
+    'mode.menuEntry': entry('Mode', 'm', 3),
+    'cleanscreen.menuEntry': entry('Clean screen', 'off', 2),
+    'statusline.menuEntry': entry('Status line', 'off', 1),
+  })
+  await start($)
+  const ui = await $.ui.mount(pane)
+  expect((await ui.find({ key: 'open-statusline' })).props.hotkey).toBe('1')
+  expect((await ui.find({ key: 'open-cleanscreen' })).props.hotkey).toBe('2')
+  expect((await ui.find({ key: 'open-mode' })).props.hotkey).toBe('3')
+  expect((await ui.find({ key: 'open-permissions' })).props.hotkey).toBe('4')
+})
+
+test('/mods permissions opens its page; absent it opens main with a toast', async ($, on) => {
+  const { state, toasts, set } = engine(on)
+  await start($)
+  await mods($, 'permissions')
+  expect(state('menu.panel')).toBe('main')
+  expect(toasts).toEqual(['permissions is not installed'])
+  set('permissions.menuEntry', entry('Permissions', 'new sessions: ask', 4))
+  await mods($, 'permissions')
+  expect(state('menu.panel')).toBe('permissions')
+})

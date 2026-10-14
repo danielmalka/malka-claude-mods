@@ -31,6 +31,11 @@
       "description": "Pick the model and the reasoning effort from one small pane or /mode. Does nothing until you pick something."
     },
     {
+      "name": "permissions",
+      "source": "./plugins/permissions",
+      "description": "Shows the permission mode and picks the one new sessions start in (permissions.defaultMode). Does nothing until you pick something."
+    },
+    {
       "name": "menu",
       "source": "./plugins/menu",
       "description": "An optional /mods menu that lists the installed mods (status line, clean screen, mode) and opens each one's page in a pane."
