@@ -1,0 +1,9 @@
+{
+  "name": "menu",
+  "version": "0.1.0",
+  "description": "An optional /mods menu that lists the installed mods (status line, clean screen, mode) and opens each one's page in a pane.",
+  "author": {
+    "name": "danielmalka"
+  },
+  "types": "./types/index.d.ts"
+}
