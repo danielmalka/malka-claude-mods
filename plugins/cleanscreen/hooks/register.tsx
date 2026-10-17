@@ -150,25 +150,35 @@ export const register: Register = on => {
     return page($, e, true)
   })
 
-  // The band above the prompt. A failure draws nothing of ours.
+  // The band above the prompt. A failure draws nothing of ours; whatever is beneath is asked exactly once, outside the guard.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    let band: ReturnType<typeof cleanBand> | null = null
+    const ui = $.ui.resolve(e)
     try {
-      if (e.props.hasSurvey) return next(e)
-      const t = await read($, taskAtom)
-      if (!(await read($, isOnAtom)) || t === null) return next(e)
-      const theme = await read($, themeAtom)
-      return cleanBand($.ui.resolve(e), {
-        t,
-        theme,
-        colors: colorsFor(theme, await read($, customAtom)),
-        isCollapsed: await read($, collapsedAtom),
-        clock: await read($, clockAtom),
-        columns: Math.max(30, e.props.bodyColumns ?? 80),
-        onToggle: () => update($, collapsedAtom, c => !c),
-      })
+      const t = e.props.hasSurvey ? null : await read($, taskAtom)
+      if (t !== null && (await read($, isOnAtom))) {
+        const theme = await read($, themeAtom)
+        band = cleanBand(ui, {
+          t,
+          theme,
+          colors: colorsFor(theme, await read($, customAtom)),
+          isCollapsed: await read($, collapsedAtom),
+          clock: await read($, clockAtom),
+          columns: Math.max(30, e.props.bodyColumns ?? 80),
+          onToggle: () => update($, collapsedAtom, c => !c),
+        })
+      }
     } catch {
-      return next(e)
+      band = null
     }
+    const under = await next(e) // keep what hooks beneath draw (decision router, status band, ...)
+    if (band === null) return under
+    return (
+      <ui.Box flexDirection="column">
+        {under}
+        {band}
+      </ui.Box>
+    )
   })
 
   // Tool rows draw nothing while it is on, except a call that errored, was refused or was interrupted.

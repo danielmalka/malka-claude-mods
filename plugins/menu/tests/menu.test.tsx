@@ -108,6 +108,7 @@ test('footer: own button when the status line is off or absent, none when it is 
   set('statusline.menuEntry', entry('Status line', 'on', 1))
   const on_ = await $.ui.mount(hint)
   expect(await on_.find({ type: 'Text', text: /esc to interrupt/ })).toBeUndefined() // the status line draws the row
+  expect(await on_.find({ key: 'mods-open' })).toBeUndefined() // the engine's tree, untouched: the status band owns the button
 })
 
 test('the footer button opens the pane', async ($, on) => {

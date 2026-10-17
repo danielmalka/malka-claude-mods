@@ -1,64 +1,12 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-const ok = { value: undefined } as any
-const SETTINGS = '/cfg/settings.json'
-const BAK = `${SETTINGS}.statusline.bak`
-const USER_LINE = { type: 'command', command: 'echo mine' }
-
-const hintProps = { hint: 'esc to interrupt', columns: 140 } as any
-const hint = { plugin: 'statusline', surface: 'terminal', component: 'PromptHint', props: hintProps, viewport: { columns: 140, rows: 40 } } as any
-const menuPane = (panel: string) => ({ plugin: 'statusline', surface: 'terminal', component: 'Pane', requestId: 'mods-menu', props: { bodyColumns: 60, scroll: { bodyRows: 10 }, view: {} } }) as any
-
-// what the engine would answer beneath the plugin
-function engine(on: any, opts: { store?: Record<string, unknown>; files?: Record<string, string>; menu?: Record<string, unknown>; noUsage?: boolean; pct?: () => number } = {}) {
-  const store = opts.store ?? {}
-  const toasts: string[] = []
-  const opened: string[] = []
-  const files = opts.files ?? { [SETTINGS]: JSON.stringify({ theme: 'x', statusLine: USER_LINE }) }
-  on('env.get', (_$: any, e: any) => ({ value: e.name === 'CLAUDE_CONFIG_DIR' ? '/cfg' : undefined }))
-  on('fs.exists', (_$: any, e: any) => ({ value: e.path in files }))
-  on('fs.read', (_$: any, e: any) => ({ value: files[e.path] }))
-  on('fs.write', (_$: any, e: any) => ((files[e.path] = e.content ?? e.text ?? e.data), ok))
-  on('store.get', (_$: any, e: any) => ({ value: store[e.key] }))
-  on('store.set', (_$: any, e: any) => ((store[e.key] = e.value), ok))
-  on('store.delete', (_$: any, e: any) => (delete store[e.key], ok))
-  on('session.model', () => ({ value: 'claude-opus-5-5' }))
-  on('session.cwd', () => ({ value: '/work/proj' }))
-  on('session.usage', () => (opts.noUsage ? Promise.reject(new Error('no usage yet')) : {
-    value: { context: { percent: opts.pct ? opts.pct() : 41, tokens: 82_000, window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 30, resetsAt: new Date(3_600_000).toISOString() }] },
-  }))
-  on('process.run', () => ({ value: { exitCode: 0, stdout: 'main\n', stderr: '' } }))
-  // the host's named values: the plugin's own writes land here, and a test plays the menu mod by writing its keys
-  const vals = new Map<string, unknown>()
-  const ver = new Map<string, number>()
-  on('state.get', (_$: any, e: any, next: any) => {
-    const k = `${e.plugin}.${e.key}`
-    return e.plugin === 'menu' ? { value: { value: vals.get(k), version: ver.get(k) ?? 0 } } : next(e)
-  })
-  const order: string[] = []
-  on('state.set', (_$: any, e: any, next: any) => {
-    vals.set(`${e.plugin}.${e.key}`, e.value)
-    if (e.key === 'isOn' || e.key === 'menuEntry') order.push(`${e.key}=${e.key === 'isOn' ? e.value : e.value.summary}`)
-    return next(e)
-  })
-  on('session.start', (_$: any, e: any) => ({ cwd: e.cwd }))
-  on('ui.toast', (_$: any, e: any) => (toasts.push(e.text), ok))
-  on('command.register', () => ok)
-  on('ui.open', (_$: any, e: any) => (opened.push(e.id), { value: { isPlaced: true } }))
-  on('ui.render', async ($: any, e: any) => {
-    const { Box } = $.ui.resolve(e)
-    return <Box />
-  })
-  return { store, files, toasts, order, opened, state: (k: string) => vals.get(k), setState: (k: string, v: unknown) => (vals.set(k, v), ver.set(k, (ver.get(k) ?? 0) + 1)) }
-}
-
-const run = ($: any, args: string) => $.command.run({ command: 'statusline', args })
+import { band, BAK, engine, hint, menuPane, ok, run, SETTINGS, USER_LINE } from './harness'
 
 test('default off: no status row, the hint is left alone', async ($, on) => {
   mock.clock(on, { now: 0 })
   const { files } = engine(on)
   await $.session.start({ cwd: '/work/proj', surface: 'terminal', isInteractive: true })
-  const ui = await $.ui.mount(hint)
+  const ui = await $.ui.mount(band())
   expect(await ui.find({ type: 'Text', text: /ctx / })).toBeUndefined()
   expect(JSON.parse(files[SETTINGS]!).statusLine).toEqual(USER_LINE)
 })
@@ -71,14 +19,14 @@ test('on then off: statusLine is backed up, removed, and restored', async ($, on
   expect(JSON.parse(files[SETTINGS]!)).toEqual({ theme: 'x' })
   expect(JSON.parse(files[BAK]!).statusLine).toEqual(USER_LINE)
   expect(store.isOn).toBe(true)
-  const ui = await $.ui.mount(hint)
+  const ui = await $.ui.mount(band())
   expect(await ui.find({ type: 'Text', text: /ctx / })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Opus 5\.5/ })).toBeDefined()
 
   await run($, 'off')
   expect(JSON.parse(files[SETTINGS]!)).toEqual({ theme: 'x', statusLine: USER_LINE })
   expect(store.savedStatusLine).toBeUndefined()
-  expect(await (await $.ui.mount(hint)).find({ type: 'Text', text: /ctx / })).toBeUndefined()
+  expect(await (await $.ui.mount(band())).find({ type: 'Text', text: /ctx / })).toBeUndefined()
 })
 
 test('the mods button shows only while menu.present is true', async ($, on) => {
@@ -86,11 +34,11 @@ test('the mods button shows only while menu.present is true', async ($, on) => {
   const { setState } = engine(on, { files: { [SETTINGS]: '{}' } })
   await $.session.start({ cwd: '/work/proj', surface: 'terminal', isInteractive: true })
   await run($, 'on')
-  const bare = await $.ui.mount(hint)
+  const bare = await $.ui.mount(band())
   expect(await bare.find({ key: 'mods-open' })).toBeUndefined()
   await bare.unmount()
   setState('menu.present', true)
-  expect(await (await $.ui.mount(hint)).find({ key: 'mods-open' })).toBeDefined()
+  expect(await (await $.ui.mount(band())).find({ key: 'mods-open' })).toBeDefined()
 })
 
 test('menuEntry is written at start and on change', async ($, on) => {
@@ -244,25 +192,102 @@ test('/statusline with no argument opens the settings pane', async ($, on) => {
   expect(opened).toEqual(['statusline-settings'])
 })
 
-test('the row with the menu absent: model, folder, branch, context, limit countdown', async ($, on) => {
+test('the band with the menu absent: ctx, limit countdown, then model, folder, branch', async ($, on) => {
   mock.clock(on, { now: 0 })
   engine(on, { files: { [SETTINGS]: '{}' } })
   await $.session.start({ cwd: '/work/proj', surface: 'terminal', isInteractive: true })
   await run($, 'on')
-  const ui = await $.ui.mount(hint)
-  const row = (await ui.find({ type: 'Text', text: /ctx/ })) as any
-  expect(row.text).toMatch(/^Opus 5\.5 · proj · main {2}│ {2}ctx .*41% 82k\/200k {2}│ {2}5h .*30% \(resets \d+[smhd]/)
+  const ui = await $.ui.mount(band())
+  expect(((await ui.find({ type: 'Text', text: /^ctx .*41% 82k\/200k$/ })) as any).text).toMatch(/^ctx .*41% 82k\/200k$/)
+  expect(await ui.find({ type: 'Text', text: /^5h .*30% \(resets \d+[smhd]/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Opus 5.5 · proj · main' })).toBeDefined()
   expect(await ui.find({ key: 'mods-open' })).toBeUndefined()
 })
 
-test('on with no snapshot yet: the hint row and the mods button are still drawn', async ($, on) => {
+// every segment, whole, at any width: compared with the full-detail strings (bars stripped)
+for (const width of [200, 140, 80, 40]) {
+  test(`bodyColumns ${width}: every segment is drawn whole, none cut or missing`, async ($, on) => {
+    mock.clock(on, { now: 0 })
+    const { setState } = engine(on, { files: { [SETTINGS]: '{}' } })
+    setState('menu.present', true)
+    await $.session.start({ cwd: '/work/proj', surface: 'terminal', isInteractive: true })
+    await run($, 'on')
+    const gen: any = $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', effort: 'medium', messageCount: 1 })
+    for await (const _ of gen) void _
+    const ui = await $.ui.mount(band(width))
+    // the full-detail strings; a bar (with its trailing space) may sit before the percentage
+    const full: [string, string, RegExp][] = [
+      ['ctx', '41% 82k/200k', /^ctx 41% 82k\/200k$/],
+      ['5h', '30% \\(resets \\d+[smhd]\\w*\\)', /^5h 30% \(resets \d+[smhd]\w*\)$/],
+      ['7d', '12% \\(resets \\d+[smhd]\\w*\\)', /^7d 12% \(resets \d+[smhd]\w*\)$/],
+    ]
+    for (const [label, rest, whole] of full) {
+      const found = (await ui.find({ type: 'Text', text: new RegExp(`^${label} (?:[█░]+ )?${rest}$`) })) as any
+      expect(found).toBeDefined()
+      expect((found.text as string).replace(/[█░]+ /, '')).toMatch(whole)
+    }
+    expect(((await ui.find({ type: 'Text', text: '● cache ok' })) as any).text).toBe('● cache ok')
+    expect(((await ui.find({ type: 'Text', text: 'Opus 5.5 · proj · main' })) as any).text).toBe('Opus 5.5 · proj · main')
+    expect(await ui.find({ key: 'mods-open' })).toBeDefined()
+    expect(await ui.findAll({ type: 'Text', text: /^ctx .*82k\/200k$/ })).toHaveLength(1)
+  })
+}
+
+test('no snapshot yet: only the mods button; without the menu the engine tree is left alone', async ($, on) => {
   mock.clock(on, { now: 0 })
   const { setState } = engine(on, { store: { isOn: true }, files: { [SETTINGS]: '{}' }, noUsage: true })
+  await $.session.start({ cwd: '/work/proj', surface: 'terminal', isInteractive: true })
+  const bare = await $.ui.mount(band())
+  expect(await bare.find({ key: 'mods-open' })).toBeUndefined()
+  expect(await bare.find({ type: 'Text', text: /ctx / })).toBeUndefined()
+  await bare.unmount()
+  setState('menu.present', true)
+  const ui = await $.ui.mount(band())
+  expect(await ui.find({ key: 'mods-open' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /ctx / })).toBeUndefined()
+})
+
+test('hasSurvey and off pass through to the hooks beneath', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  engine(on, { files: { [SETTINGS]: '{}' } })
+  await $.session.start({ cwd: '/work/proj', surface: 'terminal', isInteractive: true })
+  expect(await (await $.ui.mount(band())).find({ type: 'Text', text: /ctx / })).toBeUndefined() // off
+  await run($, 'on')
+  expect(await (await $.ui.mount(band(140, { hasSurvey: true }))).find({ type: 'Text', text: /ctx / })).toBeUndefined()
+  expect(await (await $.ui.mount(band())).find({ type: 'Text', text: /ctx / })).toBeDefined()
+})
+
+test('the band keeps what the hooks beneath draw (the engine stub draws a Text key=other)', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  engine(on, { files: { [SETTINGS]: '{}' } })
+  await $.session.start({ cwd: '/work/proj', surface: 'terminal', isInteractive: true })
+  await run($, 'on')
+  const ui = await $.ui.mount(band())
+  expect(await ui.find({ type: 'Text', text: 'from beneath' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^ctx / })).toBeDefined()
+})
+
+test('pressing the band button reaches the mods-open press hook', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  const { setState } = engine(on, { files: { [SETTINGS]: '{}' } })
+  let pressed = 0
+  on('ui.press', { plugin: 'statusline', element: 'mods-open' }, (_$: any, e: any, next: any) => (pressed++, next(e)))
   setState('menu.present', true)
   await $.session.start({ cwd: '/work/proj', surface: 'terminal', isInteractive: true })
-  const ui = await $.ui.mount({ ...hint, props: { hint: 'esc to interrupt\n·', columns: 140 } })
-  expect(await ui.find({ type: 'Text', text: 'esc to interrupt' })).toBeDefined()
-  expect(await ui.find({ key: 'mods-open' })).toBeDefined()
+  await run($, 'on')
+  await (await $.ui.mount(band())).press({ key: 'mods-open' })
+  expect(pressed).toBe(1)
+})
+
+test('PromptHint is no longer hooked by the statusline', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  const { setState } = engine(on, { files: { [SETTINGS]: '{}' } })
+  setState('menu.present', true)
+  await $.session.start({ cwd: '/work/proj', surface: 'terminal', isInteractive: true })
+  await run($, 'on')
+  const ui = await $.ui.mount(hint)
+  expect(await ui.find({ type: 'Text', text: /ctx / })).toBeUndefined()
+  expect(await ui.find({ key: 'mods-open' })).toBeUndefined()
 })
 
 test('the menuEntry and the mode flip in an order that keeps summary on <=> our footer', async ($, on) => {

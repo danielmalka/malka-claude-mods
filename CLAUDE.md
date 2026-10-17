@@ -20,6 +20,13 @@
 - A árvore acompanha a atividade mais recente (`$.ui.scroll`), parando enquanto a pessoa rola à mão.
 - Subir a versão do plugin a cada mudança: o cache de instalação é chaveado pela versão (lição do menu 0.1.0 → 0.1.1).
 
-## statusline (pedido do dono, ainda NÃO implementado)
+## statusline 0.2.0 (decidido pelo dono em 2026-10-17)
 
-- A barra da statusline deve ter uma linha só para ela, isolada da linha do rótulo de modo do engine (`bypass permissions on` fica onde está); sem reduzir nenhuma informação exibida. Motivo: em monitores pequenos a linha única não cabe e corta informação.
+- A barra da statusline tem faixa própria `AbovePrompt`, isolada da linha do rótulo de modo do engine (`bypass permissions on` fica onde está); nenhuma informação é cortada em tela estreita: os segmentos (ctx, 5h, 7d, cache, modelo·pasta·branch) são atômicos e quebram para a linha de baixo. As barras de progresso só caem se duas linhas não bastarem; números, resets e cabeçalho nunca.
+- O `[-]` do engine pode recolher a faixa (aceito). Nossa linha própria `⎿ pill · /tasks to manage` foi abandonada (o engine mantém a dele).
+- Todo hook `AbovePrompt` deve chamar `next(e)` uma única vez e compor com o que está abaixo (padrão do decision-router/resume/cleanscreen).
+
+## tree-explained: edições por Bash (decidido pelo dono em 2026-10-17)
+
+- O mod deve rastrear também mudanças de arquivo feitas por Bash (sed -i, heredoc, redirecionamento, scripts, git apply, etc.), não só Edit/Write. Motivo: agentes (builders) costumam editar por Bash e o painel ficava vazio.
+- O desenho (como detectar, contadores `+N -N`, o que entra no resumo, limites de custo e segredos) ainda será decidido em plano antes de implementar.

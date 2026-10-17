@@ -6,7 +6,7 @@ import type { MenuEntry, StatusSnapshot } from '../types'
 import { configDir, moveStatusLine, parseSettings, type Settings } from './settings'
 import { checkContext, resetContextToasts } from './context-toasts'
 import { LIMIT_LABELS } from './status'
-import { statusPage, statusRow } from './status-line'
+import { statusBand, statusPage } from './status-line'
 
 const isOnAtom = atom({ plugin: 'statusline', key: 'isOn' } as const, false)
 const snapshotAtom = atom({ plugin: 'statusline', key: 'snapshot' } as const, null)
@@ -148,14 +148,6 @@ async function setOnNow($: EngineInterface, isOn: boolean) {
 const setOn = ($: EngineInterface, isOn: boolean) => serial(() => setOnNow($, isOn))
 
 // The menu mod handles these presses itself (ui.press on this plugin's key); the closure only keeps the Button pressable.
-// The engine's hint on one row: it can carry a second line holding only a separator.
-const hintText = (hint: string) =>
-  hint
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(line => /[\p{L}\p{N}]/u.test(line))
-    .join(' · ')
-
 const noop = () => undefined
 
 const tell = ($: EngineInterface) => (error: unknown) => $.ui.toast(`Status line: ${String(error)}`)
@@ -167,14 +159,6 @@ async function page($: EngineInterface, e: any, hasBack: boolean) {
     onSet: v => setOn($, v).catch(tell($)),
     onBack: noop,
   })
-}
-
-const openTasks = async ($: EngineInterface) => {
-  try {
-    await $.command.run({ command: 'tasks' })
-  } catch (error) {
-    $.ui.toast(`Could not open /tasks: ${String(error)}`)
-  }
 }
 
 export const register: Register = on => {
@@ -220,34 +204,35 @@ export const register: Register = on => {
     return page($, e, true)
   })
 
-  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
-    if (!(await read($, isOnAtom))) return next(e)
+  // The status band: its own rows under whatever the hooks beneath draw above the prompt. The engine's mode-label /
+  // hint row (PromptHint) is no longer ours. The engine's [-] can collapse the band; that is accepted.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey || !(await read($, isOnAtom))) return next(e)
     const snapshot = await read($, snapshotAtom)
-    const ui = $.ui.resolve(e)
     const { value: hasMenu } = await $.state.get(menuPresent)
+    const ui = $.ui.resolve(e)
     const label = '◆ mods'
     const button = hasMenu === true ? <ui.Button key="mods-open" plain label={label} onPress={noop} /> : undefined
-    // No snapshot yet (or it keeps failing): the engine's hint row, so the footer and the button never vanish.
-    if (snapshot === null) {
-      return (
-        <ui.Box justifyContent="space-between" flexGrow={1} gap={1}>
-          <ui.Text dimColor wrap="truncate">
-            {hintText(e.props.hint)}
-          </ui.Text>
-          {button ?? null}
-        </ui.Box>
-      )
-    }
-    return statusRow(ui, {
-      snapshot,
-      clock: await read($, clockAtom),
-      lastResponseAt: await read($, lastResponseAt),
-      columns: e.viewport?.columns ?? 120,
-      label: button === undefined ? '' : label,
-      hint: e.props.hint,
-      button,
-      onPill: () => openTasks($),
-    })
+    // No snapshot yet (or it keeps failing): only the button, so it never vanishes.
+    if (snapshot === null && button === undefined) return next(e)
+    const under = await next(e)
+    return (
+      <ui.Box flexDirection="column">
+        {under}
+        {snapshot === null ? (
+          <ui.Box justifyContent="flex-end">{button}</ui.Box>
+        ) : (
+          statusBand(ui, {
+            snapshot,
+            clock: await read($, clockAtom),
+            lastResponseAt: await read($, lastResponseAt),
+            columns: Math.max(1, e.props.bodyColumns ?? 80),
+            label: button === undefined ? '' : label,
+            button,
+          })
+        )}
+      </ui.Box>
+    )
   })
 
   on('turn.complete', async ($, e, next) => {

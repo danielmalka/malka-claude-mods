@@ -159,7 +159,8 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // Footer, disjoint with the status line: when it is on, it draws the row and the ◆ mods button itself.
+  // Footer, disjoint with the status line: when it is on, the engine's hint row stays as is and the status band
+  // (above the prompt) draws the ◆ mods button; when it is off, this row and button are drawn here.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const { value } = await $.state.get(statuslineEntry).catch(() => ({ value: undefined }))
     if (value?.summary === 'on') return next(e)
