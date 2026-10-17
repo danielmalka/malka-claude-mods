@@ -179,3 +179,29 @@ test('/mods permissions opens its page; absent it opens main with a toast', asyn
   await mods($, 'permissions')
   expect(state('menu.panel')).toBe('permissions')
 })
+
+test('tree-explained is the fifth member: hotkey 5, a press opens its panel', async ($, on) => {
+  const { state } = engine(on, {
+    'tree-explained.menuEntry': entry('tree-explained', 'off', 5),
+    'permissions.menuEntry': entry('Permissions', 'new sessions: ask', 4),
+    'mode.menuEntry': entry('Mode', 'm', 3),
+    'cleanscreen.menuEntry': entry('Clean screen', 'off', 2),
+    'statusline.menuEntry': entry('Status line', 'off', 1),
+  })
+  await start($)
+  const ui = await $.ui.mount(pane)
+  expect((await ui.find({ key: 'open-tree-explained' })).props.hotkey).toBe('5')
+  await ui.press({ key: 'open-tree-explained' })
+  expect(state('menu.panel')).toBe('tree-explained')
+})
+
+test('/mods tree-explained opens its page; absent it opens main with a toast', async ($, on) => {
+  const { state, toasts, set } = engine(on)
+  await start($)
+  await mods($, 'tree-explained')
+  expect(state('menu.panel')).toBe('main')
+  expect(toasts).toEqual(['tree-explained is not installed'])
+  set('tree-explained.menuEntry', entry('tree-explained', 'off', 5))
+  await mods($, 'tree-explained')
+  expect(state('menu.panel')).toBe('tree-explained')
+})
