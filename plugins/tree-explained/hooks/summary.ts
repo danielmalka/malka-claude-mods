@@ -3,15 +3,34 @@ import { cleanText, countLines } from './tree'
 export const DIFF_CAP = 6000
 export const MAX_SUMMARIES = 20
 
-// Looks like a secret by its name: listed as changed, never sent.
-const SECRET = /^(\.env(\..*)?|\.npmrc|.*\.pem|.*\.key|.*\.p12|.*\.pfx|id_rsa.*|credentials.*|secrets\..*)$/i
-export const isSecretName = (path: string) => SECRET.test(path.split('/').pop() ?? '')
+// Looks like a secret by its name (case-insensitive, by name only): listed as changed, never read, never sent, and never
+// part of a content-deriving git command.
+const SECRET_NAME = [
+  /^\.env/,
+  /^\.npmrc$/,
+  /\.pem/,
+  /\.key/,
+  /^id_(rsa|dsa|ecdsa|ed25519)/,
+  /^(\.netrc|_netrc|\.pgpass|\.git-credentials|\.htpasswd|kubeconfig)$/,
+  /\.(jks|keystore|p12|pfx)$/,
+  /\.(tfvars|tfstate)/,
+  /^service-account.*\.json$/,
+  /^credentials/,
+  /^secrets\./,
+]
+const SECRET_DIRS = new Set(['.ssh', '.aws', '.gnupg', '.kube'])
+export function isSecretName(path: string) {
+  const segs = path.toLowerCase().split('/')
+  return segs.slice(0, -1).some(s => SECRET_DIRS.has(s)) || SECRET_NAME.some(re => re.test(segs[segs.length - 1] ?? ''))
+}
 
 // One file's changes in a turn. A single Edit or Write is one part; several coalesce by path.
 // Each text is cut to DIFF_CAP at record time and parts stop being kept once a file holds DIFF_CAP characters
 // (only that much could be sent), so memory stays bounded; the line counters always sum everything.
 export type Part = { old: string; new: string }
-export type Change = { path: string; isWrite: boolean; add: number; del: number; parts: Part[] }
+// `kind` marks a change found by the Bash sweep: its counters are totals against HEAD (they replace, not sum) and `patch`
+// (tracked files, fetched once per turn) is the diff text; 'deleted' is a removed file.
+export type Change = { path: string; isWrite: boolean; add: number; del: number; parts: Part[]; kind?: 'bash' | 'deleted'; patch?: string; secret?: true }
 
 // The line counts come from the whole text, the kept text is for the model.
 export const change = (path: string, isWrite: boolean, old: string, text: string): Change => ({
@@ -22,10 +41,15 @@ export const change = (path: string, isWrite: boolean, old: string, text: string
   parts: [{ old: old.slice(0, DIFF_CAP), new: text.slice(0, DIFF_CAP) }],
 })
 
-const size = (c: Change) => c.parts.reduce((n, p) => n + p.old.length + p.new.length, 0)
+const size = (c: Change) => (c.patch !== undefined ? c.patch.length : c.parts.reduce((n, p) => n + p.old.length + p.new.length, 0))
 
 export function merge(into: Change | undefined, c: Change): Change {
   if (into === undefined) return c
+  if (c.kind !== undefined) {
+    // a Bash total replaces the counters; a second sweep of the same file replaces its kept text too
+    const parts = into.kind !== undefined ? c.parts : size(into) >= DIFF_CAP ? into.parts : [...into.parts, ...c.parts]
+    return { ...into, isWrite: into.isWrite || c.isWrite, add: c.add, del: c.del, kind: c.kind, patch: c.patch ?? into.patch, secret: c.secret ?? into.secret, parts }
+  }
   return { ...into, isWrite: into.isWrite || c.isWrite, add: into.add + c.add, del: into.del + c.del, parts: size(into) >= DIFF_CAP ? into.parts : [...into.parts, ...c.parts] }
 }
 
@@ -67,11 +91,12 @@ export function diffBlock(changes: Change[], more = 0, cap = DIFF_CAP) {
   const all = coalesce(changes)
   const shown = all.slice(0, MAX_NAMES)
   const rest = all.slice(MAX_NAMES)
-  const total = shown.filter(c => !isSecretName(c.path)).reduce((n, c) => n + size(c), 0)
+  const total = shown.filter(c => !c.secret && !isSecretName(c.path)).reduce((n, c) => n + size(c), 0)
   const ratio = total > cap ? cap / total : 1
   const out = shown.map(c => {
-    const head = `### ${c.isWrite ? 'write' : 'edit'} ${neutral(c.path)} +${c.add} -${c.del}`
-    if (isSecretName(c.path)) return `${head}\n[content withheld: the name looks like a secret]`
+    const head = `### ${c.kind === 'deleted' ? 'delete' : c.isWrite ? 'write' : 'edit'} ${neutral(c.path)} +${c.add} -${c.del}`
+    if (c.secret || isSecretName(c.path)) return `${head}\n[content withheld: the name looks like a secret]`
+    if (c.patch !== undefined) return `${head}\n${cut(neutral(c.patch), Math.floor(c.patch.length * ratio))}`
     const body = c.parts.map(p => {
       const old = p.old === '' ? '' : `--- old\n${cut(neutral(p.old), Math.floor(p.old.length * ratio))}\n`
       return `${old}--- new\n${cut(neutral(p.new), Math.floor(p.new.length * ratio))}`
