@@ -29,4 +29,9 @@
 ## tree-explained: edições por Bash (decidido pelo dono em 2026-10-17)
 
 - O mod deve rastrear também mudanças de arquivo feitas por Bash (sed -i, heredoc, redirecionamento, scripts, git apply, etc.), não só Edit/Write. Motivo: agentes (builders) costumam editar por Bash e o painel ficava vazio.
-- O desenho (como detectar, contadores `+N -N`, o que entra no resumo, limites de custo e segredos) ainda será decidido em plano antes de implementar.
+- Desenho decidido (2026-10-17): após cada Bash que não seja só leitura (`isReadOnly`), o mod consulta o git local (`status`, `diff`, `rev-parse`, sem shell, sem escrever no repo) e lista os arquivos sujos cujo mtime mudou desde a última varredura; Bash em segundo plano só varre no fim do turno. Contadores `+N -N` de arquivo mudado por Bash = diferença TOTAL contra HEAD (numstat). Arquivos ignorados pelo git NÃO são rastreados (segredos ignorados nunca aparecem nem vão ao resumo). Arquivo apagado = linha de edição com `-N` (resumo: `### delete`). Mudanças fora de repositório git (ou fora do repo) NÃO são rastreadas nesta versão (documentar). Commits/checkouts (terminam limpos) não contam como edição. Um turno com mudança por Bash é turno de edição (resumo normal, mesmos limites de 6000 caracteres e segredos).
+
+## tree-explained: rastreio por Bash — limites aceitos (decidido pelo dono em 2026-10-17)
+
+- Requer git 2.45+ (desliga o fetch preguiçoso); com git mais velho o rastreio por Bash pausa com aviso. Windows não suportado (usar WSL). Riscos residuais ACEITOS e documentados no README: repositório não confiável (o mod roda git nele como o próprio host já faz), `.git` que aponta para outro lugar, troca de arquivo entre verificar e ler, nomes de segredo reconhecidos só por padrão de nome.
+- Critério de pronto: não repetir ciclo completo de revisores; verificação enxuta (gate + conferência dos itens corrigidos).

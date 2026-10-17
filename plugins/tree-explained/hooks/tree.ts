@@ -4,8 +4,10 @@ export const MAX_FILES = 300
 
 // Escape sequences first (so their payload goes too), then every remaining control character.
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)?|\u001b./g
-const CTRL = /[\u0000-\u001f\u007f-\u009f]/g
-const CTRL_KEEP_LINES = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g
+// plus the characters that reorder or hide text: bidi marks and overrides, zero-width characters, line and paragraph separators
+const INVISIBLE = '\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff'
+const CTRL = new RegExp(`[\\u0000-\\u001f\\u007f-\\u009f${INVISIBLE}]`, 'g')
+const CTRL_KEEP_LINES = new RegExp(`[\\u0000-\\u0009\\u000b-\\u001f\\u007f-\\u009f${INVISIBLE}]`, 'g')
 
 // Safe to draw or to send: a file name or a model reply may carry escape sequences.
 export const cleanText = (s: string, keepLines = false) => s.replace(ANSI, '').replace(keepLines ? CTRL_KEEP_LINES : CTRL, '')
@@ -49,7 +51,8 @@ export function locate(file: string, cwd: string) {
 // Lines of a text as a diff counts them: a trailing newline does not add one.
 export const countLines = (s: string) => (s === '' ? 0 : s.replace(/\n$/, '').split('\n').length)
 
-export type Touch = { path: string; kind: 'read' | 'edit'; add: number; del: number; outside?: boolean }
+// `abs`: add/del are totals that replace the file's counters (the Bash sweep); else they sum.
+export type Touch = { path: string; kind: 'read' | 'edit'; add: number; del: number; outside?: boolean; abs?: boolean }
 
 // Adds a touch to the files record (new object), dropping the oldest-touched past MAX_FILES.
 export function touch(files: Record<string, Entry>, t: Touch, seq: number): Record<string, Entry> {
@@ -59,8 +62,8 @@ export function touch(files: Record<string, Entry>, t: Touch, seq: number): Reco
     [t.path]: {
       path: t.path,
       kind: t.kind === 'edit' || prev?.kind === 'edit' ? ('edit' as const) : ('read' as const),
-      add: (prev?.add ?? 0) + t.add,
-      del: (prev?.del ?? 0) + t.del,
+      add: t.abs ? t.add : (prev?.add ?? 0) + t.add,
+      del: t.abs ? t.del : (prev?.del ?? 0) + t.del,
       seq,
       ...(t.outside || prev?.outside ? { outside: true as const } : {}),
     },
@@ -101,7 +104,8 @@ export function ancestors(path: string, outside = false): string[] {
 }
 
 export const allFolders = (files: Record<string, Entry>) => [...new Set(Object.values(files).flatMap(e => ancestors(e.path, e.outside)))]
-export const openAll = (open: readonly string[], keys: readonly string[]) => [...new Set([...open, ...keys])]
+export const MAX_OPEN = 2000
+export const openAll = (open: readonly string[], keys: readonly string[]) => [...new Set([...open, ...keys])].slice(-MAX_OPEN)
 
 const leaves = (n: Node): Entry[] => [...(n.entry ? [n.entry] : []), ...[...n.kids.values()].flatMap(leaves)]
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`

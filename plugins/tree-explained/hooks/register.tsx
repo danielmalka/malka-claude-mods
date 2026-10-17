@@ -5,8 +5,10 @@ import type {} from '../types/menu'
 import type { Entry, MenuEntry } from '../types'
 import { treePage, settingsPage } from './page'
 import type { TreeActions } from './page'
-import { buildRequest, change, cleanLang, cleanReply, fallbackSummary, MAX_SUMMARIES, newPending, record } from './summary'
+import { buildRequest, change, cleanLang, DIFF_CAP, cleanReply, fallbackSummary, MAX_SUMMARIES, newPending, record } from './summary'
 import type { Change } from './summary'
+import { capMap } from './bash'
+import { fetchPatches, markBackground, markSeen, realCwd, resetSweep, sweep, takeBackground } from './sweep'
 import { allFolders, ancestors, buildRows, cleanText, locate, openAll, rowKey, touch } from './tree'
 
 const isOnAtom = atom({ plugin: 'tree-explained', key: 'isOn' } as const, false)
@@ -28,6 +30,7 @@ const PANE = 'tree-explained'
 const MENU_PANE = 'mods-menu'
 // The model asked for the summary: a small alias the engine resolves (`$.model.complete` documents `haiku`).
 const SUMMARY_MODEL = 'haiku'
+const SWEEP_WAIT_MS = 5000 // how long a turn's end waits for a Bash sweep still running
 
 let cwd = ''
 let seq = 0
@@ -38,6 +41,8 @@ let pending = newPending()
 const inflight = new Map<string, string>()
 let timer: Timer | undefined
 let lastKey = '' // row key of the file touched last by an edit: where the pane follows
+const sweeps = new Set<Promise<void>>() // Bash sweeps scheduled or running: a turn's end waits for them
+const bashAbs = new Map<string, string>() // tree path -> absolute path of the files the Bash sweep flagged
 
 const stopTimer = () => {
   timer?.cancel()
@@ -49,7 +54,7 @@ const writeEntry = async ($: EngineInterface) => {
   await $.state.set(menuEntryRef, entry).catch(() => undefined)
 }
 
-const baseName = () => cwd.replace(/\/+$/, '').split('/').pop() || 'session'
+const baseName = () => cleanText(cwd.replace(/\/+$/, '').split('/').pop() ?? '') || 'session'
 
 // A new conversation (session start or /clear): the tree, the summaries and the language rule begin again.
 async function reset($: EngineInterface) {
@@ -61,6 +66,9 @@ async function reset($: EngineInterface) {
   inflight.clear()
   stopTimer()
   lastKey = ''
+  bashAbs.clear()
+  sweeps.clear()
+  resetSweep()
   await update($, filesAtom, () => ({}))
   await update($, openAtom, () => [])
   await update($, manualAtom, () => false)
@@ -100,8 +108,10 @@ async function setOn($: EngineInterface, isOn: boolean) {
   await update($, isOnAtom, () => isOn)
   await $.store.set('isOn', isOn)
   await writeEntry($)
-  if (isOn) await openPane($)
-  else {
+  if (isOn) {
+    await openPane($)
+    await runSweep($, epoch, true)
+  } else {
     pending = newPending()
     stopTimer()
     await $.ui.close({ id: PANE })
@@ -190,9 +200,68 @@ async function onFile($: EngineInterface, e: any, next: any) {
           : change(path, false, String(src.old_string ?? ''), String(src.new_string ?? ''))
       await update($, filesAtom, f => touch(f, { path, kind: 'edit', add: c.add, del: c.del, outside }, ++seq))
       if (await read($, isOnAtom)) record(pending, c)
+      await markSeen($, cwd, String(src.file_path))
     }
   } catch {}
   return res
+}
+
+// After a Bash call: whatever git shows changed since the last sweep joins the tree as edits. Nothing runs before the call.
+async function runSweep($: EngineInterface, born: number, baseline = false) {
+  try {
+    cwd = await $.session.cwd().catch(() => cwd)
+    const flags = await sweep($, cwd, () => born === epoch, baseline)
+    if (flags.length === 0) return
+    const base = await realCwd($, cwd)
+    if (born !== epoch) return
+    const placed = flags.map(f => ({ f, ...locate(f.abs, base) }))
+    await update($, filesAtom, files => placed.reduce((acc, p) => touch(acc, { path: p.path, kind: 'edit', add: p.f.add, del: p.f.del, outside: p.outside, abs: true }, ++seq), files))
+    await update($, openAtom, o => openAll(o, placed.flatMap(p => ancestors(p.path, p.outside))))
+    for (const p of placed) {
+      bashAbs.set(p.path, p.f.abs)
+      capMap(bashAbs)
+      record(pending, { ...p.f.change, path: p.path })
+    }
+    lastKey = rowKey(placed[placed.length - 1]!.path)
+    $.clock.after(0, () => void follow($))
+  } catch {}
+}
+
+async function onBash($: EngineInterface, e: any, next: any) {
+  const res = await next(e)
+  const born = epoch
+  try {
+    if (res.deny !== undefined || res.isReadOnly === true || !(await read($, isOnAtom))) return res
+    if (res.result?.backgroundTaskId) markBackground() // the writes land later: one sweep when the turn ends
+    else {
+      // after the call's result is on its way, never inside it
+      let done: () => void = () => undefined
+      const p = new Promise<void>(r => (done = r))
+      sweeps.add(p)
+      const finish = () => (sweeps.delete(p), done())
+      try {
+        $.clock.after(0, () => void runSweep($, born).finally(finish))
+      } catch {
+        finish()
+      }
+    }
+  } catch {}
+  return res
+}
+
+// The patches of the Bash-flagged tracked files, fetched once per turn, cut to the per-text cap.
+async function withPatches($: EngineInterface, changes: Change[], born: number) {
+  try {
+    const wanted = changes.filter(c => c.kind !== undefined && !c.isWrite && bashAbs.has(c.path)).map(c => ({ path: c.path, abs: bashAbs.get(c.path)! }))
+    if (wanted.length === 0) return changes
+    const patches = await fetchPatches($, wanted, () => born === epoch)
+    return changes.map(c => {
+      const patch = patches.get(bashAbs.get(c.path) ?? '')
+      return patch === undefined ? c : { ...c, patch: patch.slice(0, DIFF_CAP) }
+    })
+  } catch {
+    return changes
+  }
 }
 
 async function tree($: EngineInterface, e: any) {
@@ -243,6 +312,7 @@ export const register: Register = on => {
         .catch(() => undefined)
       // ponytail: opened on its own, the engine may leave it undrawn below 144 columns (110 once the person has opened it before).
       if (isOn) await openPane($).catch(() => undefined)
+      if (isOn) await runSweep($, epoch, true)
     } catch {}
     return next(e)
   })
@@ -330,9 +400,21 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Edit' }, onFile)
   on('tool.call', { tool: 'Write' }, onFile)
   on('tool.call', { tool: 'Read' }, onFile)
+  on('tool.call', { tool: 'Bash' }, onBash)
 
   // The summary is asked after the turn, never inside it: the next prompt does not wait.
   on('turn.complete', async ($, e, next) => {
+    // a background Bash may have written since its call ended
+    if (takeBackground() && (await read($, isOnAtom).catch(() => false))) await runSweep($, epoch)
+    // a sweep still running should land before the turn's changes are taken, but the wait is bounded: a late one goes to the next turn
+    if (sweeps.size > 0) {
+      let bound: Timer | undefined
+      try {
+        const timeout = new Promise<void>(r => (bound = $.clock.after(SWEEP_WAIT_MS, () => r())))
+        await Promise.race([Promise.allSettled([...sweeps]), timeout])
+      } catch {} // no timer: go on without the wait
+      bound?.cancel()
+    }
     if (e.agentId === undefined && pending.files.size > 0) {
       const changes = [...pending.files.values()]
       const more = pending.lost.size
@@ -341,7 +423,7 @@ export const register: Register = on => {
       if (await read($, isOnAtom).catch(() => false)) {
         const mine = epoch
         const turn = ++turnNo
-        $.clock.after(0, () => void summarize($, changes, more, mine, turn).catch(() => undefined))
+        $.clock.after(0, () => void withPatches($, changes, mine).then(cs => summarize($, cs, more, mine, turn)).catch(() => undefined))
       }
     }
     return next(e)
