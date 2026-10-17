@@ -43,7 +43,12 @@
     {
       "name": "menu",
       "source": "./plugins/menu",
-      "description": "An optional /mods menu that lists the installed mods (status line, clean screen, mode) and opens each one's page in a pane."
+      "description": "An optional /mods menu that lists the installed mods (status line, clean screen, mode, permissions, tree-explained) and opens each one's page in a pane."
+    },
+    {
+      "name": "tree-explained",
+      "source": "./plugins/tree-explained",
+      "description": "A side pane with the files Claude touched as a tree (edits, reads, +N -N) and a scrollable summary of each turn. Off by default; /tree-explained turns it on. Sends diffs of changed files to the session's own model."
     }
   ]
 }

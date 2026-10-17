@@ -1,0 +1,9 @@
+{
+  "name": "tree-explained",
+  "version": "0.1.0",
+  "description": "A side pane with the files Claude touched in this session as a tree (edits, reads, +N -N) and a scrollable summary of each turn's main changes. Off by default; /tree-explained turns it on.",
+  "author": {
+    "name": "danielmalka"
+  },
+  "types": "./types/index.d.ts"
+}

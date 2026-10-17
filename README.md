@@ -20,6 +20,7 @@ Then install the mods you want, one at a time:
 /plugin install mode@malka-claude-mods
 /plugin install permissions@malka-claude-mods
 /plugin install decision-router@malka-claude-mods
+/plugin install tree-explained@malka-claude-mods
 /plugin install menu@malka-claude-mods
 ```
 
@@ -34,6 +35,7 @@ Then install the mods you want, one at a time:
 | [mode](plugins/mode/README.md) | Switch model and effort from a panel. | available |
 | [permissions](plugins/permissions/README.md) | Show the permission mode and pick the one new sessions start in. | available |
 | [decision-router](plugins/decision-router/README.md) | Suggests a model and effort for your first prompt via a decision model (sends a prompt excerpt to a third party; needs a key). | available |
+| [tree-explained](plugins/tree-explained/README.md) | Side pane with the files Claude touched as a tree and a summary of each turn (sends diffs of changed files to the session's own model). | available |
 | [menu](plugins/menu/README.md) | Optional shared settings menu for whichever of these mods are installed. | available |
 
 ## License
@@ -64,6 +66,7 @@ Depois instale os mods que quiser, um de cada vez:
 /plugin install mode@malka-claude-mods
 /plugin install permissions@malka-claude-mods
 /plugin install decision-router@malka-claude-mods
+/plugin install tree-explained@malka-claude-mods
 /plugin install menu@malka-claude-mods
 ```
 
@@ -78,6 +81,7 @@ Depois instale os mods que quiser, um de cada vez:
 | [mode](plugins/mode/README.md) | Escolhe modelo e esforço num painel. | disponível |
 | [permissions](plugins/permissions/README.md) | Mostra o modo de permissão e escolhe o modo em que novas sessões começam. | disponível |
 | [decision-router](plugins/decision-router/README.md) | Sugere modelo e esforço para o primeiro prompt via um modelo de decisão (envia um trecho do prompt a terceiros; exige chave). | disponível |
+| [tree-explained](plugins/tree-explained/README.md) | Painel lateral com os arquivos que o Claude tocou em árvore e um resumo de cada turno (envia diffs dos arquivos alterados ao próprio modelo da sessão). | disponível |
 | [menu](plugins/menu/README.md) | Menu de configurações compartilhado e opcional, para os mods instalados. | disponível |
 
 Cada mod é instalável sozinho. O `menu` é opcional e lista só os mods que você instalou.
