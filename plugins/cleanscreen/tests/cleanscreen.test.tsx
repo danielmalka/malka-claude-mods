@@ -13,6 +13,8 @@ const surface = (component: string, extra: object = {}, props: object = {}) =>
   ({ plugin: 'cleanscreen', surface: 'terminal', component, props: { bodyColumns: 80, ...props }, viewport: { columns: 100, rows: 40 }, ...extra }) as any
 const menuPane = { plugin: 'cleanscreen', surface: 'terminal', component: 'Pane', requestId: 'mods-menu', props: { bodyColumns: 60, scroll: { bodyRows: 10 }, view: {} } } as any
 
+const throwing = { calls: 0, asked: 0 }
+
 // what the engine would answer beneath the plugin
 function engine(on: any, opts: { store?: Record<string, unknown> } = {}) {
   const store = opts.store ?? {}
@@ -38,6 +40,12 @@ function engine(on: any, opts: { store?: Record<string, unknown> } = {}) {
   on('prompt.submit', (_$: any, e: any) => (contexts.push(e.context), { text: e.text }))
   on('ui.render', async ($: any, e: any) => {
     const { Box, Text } = $.ui.resolve(e)
+    if (e.component === 'AbovePrompt') throwing.asked++
+    if (e.component === 'AbovePrompt' && e.props.__throw) {
+      throwing.calls++
+      throw new Error('beneath failed')
+    }
+    if (e.component === 'AbovePrompt') return <Text key="beneath">from beneath</Text>
     return ['ToolUse', 'ToolResult', 'ToolGroup'].includes(e.component) ? <Text>Bash ls</Text> : <Box />
   })
   return { store, opened, registered, toasts, contexts, state: (k: string) => vals.get(k), setState: (k: string, v: unknown) => (vals.set(k, v), ver.set(k, (ver.get(k) ?? 0) + 1)) }
@@ -113,6 +121,62 @@ test('a progress call draws the band; off it only answers', async ($, on) => {
   expect(await band.find({ type: 'Text', text: /50%/ })).toBeDefined()
   await run($, 'off')
   expect(await (await $.ui.mount(surface('AbovePrompt'))).find({ type: 'Text', text: /Write code/ })).toBeUndefined()
+})
+
+test('the band keeps what another AbovePrompt hook draws beneath it', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  engine(on)
+  await start($)
+  await run($, 'on')
+  await progress($)
+  const ui = await $.ui.mount(surface('AbovePrompt'))
+  expect(await ui.find({ type: 'Text', text: /Write code/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'from beneath' })).toBeDefined()
+})
+
+test('a throwing hook beneath is asked exactly once and its error is not swallowed', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  engine(on)
+  await start($)
+  await run($, 'on')
+  await progress($)
+  throwing.calls = 0
+  await expect($.ui.mount(surface('AbovePrompt', {}, { __throw: true }))).rejects.toThrow()
+  expect(throwing.calls).toBe(1)
+})
+
+test('the hook beneath is asked exactly once: band on, band off, no task, survey', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  engine(on)
+  await start($)
+  let last: any
+  const asked = async (props: object = {}) => {
+    await last?.unmount() // an older mount would be redrawn by later state changes and be counted
+    throwing.asked = 0
+    const ui = await $.ui.mount(surface('AbovePrompt', {}, props))
+    last = ui
+    return { n: throwing.asked, ui }
+  }
+  // off: pass-through
+  let r = await asked()
+  expect(r.n).toBe(1)
+  expect(await r.ui.find({ type: 'Text', text: 'from beneath' })).toBeDefined()
+  await run($, 'on')
+  // on, no task yet
+  r = await asked()
+  expect(r.n).toBe(1)
+  expect(await r.ui.find({ type: 'Text', text: /Write code/ })).toBeUndefined()
+  await progress($)
+  // on with a task: the band and the content beneath, one question
+  r = await asked()
+  expect(r.n).toBe(1)
+  expect(await r.ui.find({ type: 'Text', text: 'from beneath' })).toBeDefined()
+  expect(await r.ui.find({ type: 'Text', text: /Write code/ })).toBeDefined()
+  // a survey holds the band: ours yields, still one question
+  r = await asked({ hasSurvey: true })
+  expect(r.n).toBe(1)
+  expect(await r.ui.find({ type: 'Text', text: /Write code/ })).toBeUndefined()
+  expect(await r.ui.find({ type: 'Text', text: 'from beneath' })).toBeDefined()
 })
 
 test('menuEntry: apiVersion 1, off and on', async ($, on) => {

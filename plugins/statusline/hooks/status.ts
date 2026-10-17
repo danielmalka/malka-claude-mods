@@ -37,27 +37,60 @@ export const cacheState = (lastResponseAt: number | null, now: number): 'ok' | '
 
 export const LIMIT_LABELS: Record<string, string> = { five_hour: '5h', seven_day: '7d' }
 
-// The engine's background-work pill as its hint reads it (`1 shell`, `2 shells, 1 monitor`, `3 background tasks`);
-// null while none runs. `ran 2 shell commands` is a finished tool group, not a running shell.
-const BACKGROUND_PILL = /\b\d+ (?:shells?(?:, \d+ monitors?)?|(?:Artifact comment )?monitors?|background tasks?)\b(?! commands?\b)/
+// Layout. The band is made of atomic segments, in priority order: ctx, 5h, 7d, cache, then the head
+// (model · folder · branch). A segment is never split or dropped; a row that cannot hold the next one wraps.
+export type Segment = { key: string; text: string }
 
-export const backgroundPill = (hint: string): string | null => hint.match(BACKGROUND_PILL)?.[0] ?? null
+export type StatusParts = {
+  ctxText: string // `41% 82k/200k`
+  limits: readonly { label: string; percentText: string; resetText: string }[]
+  cacheText: string // '' = no cache segment
+  head: string
+}
 
-// Detail levels, most detailed first: bars and reset times, then no bars, then no reset times.
-export type Detail = 0 | 1 | 2
+// The same strings the band draws; with bars, a bar and its trailing space sit before each percentage.
+export const segmentTexts = (d: StatusParts, withBars: boolean): Segment[] => {
+  const bar = withBars ? `${'█'.repeat(BAR_WIDTH)} ` : ''
+  return [
+    { key: 'ctx', text: `ctx ${bar}${d.ctxText}` },
+    ...d.limits.map(l => ({ key: `limit-${l.label}`, text: `${l.label} ${bar}${l.percentText}${l.resetText}` })),
+    ...(d.cacheText === '' ? [] : [{ key: 'cache', text: d.cacheText }]),
+    { key: 'head', text: d.head },
+  ]
+}
 
-export const statsWidth = (
-  ctxText: string,
-  limits: readonly { label: string; percentText: string; resetText: string }[],
-  cacheText: string,
-  detail: Detail,
-): number => {
-  const bar = detail === 0 ? BAR_WIDTH + 1 : 0
-  const sep = 5
-  let width = 4 + bar + ctxText.length
-  for (const l of limits) width += sep + l.label.length + 1 + bar + l.percentText.length + (detail < 2 ? l.resetText.length : 0)
-  if (cacheText !== '') width += sep + cacheText.length
-  return width
+export const SEP_WIDTH = 5 // `  │  `, drawn only between two segments of one row
+const BUTTON_GAP = 1
+
+// Indices per row, greedy, in order. Every index appears once; one wider than the row stays alone (its Text wraps).
+// The button joins the last row when gap + button fits, else it takes a row of its own.
+export function layoutRows(widths: readonly number[], columns: number, sep: number, button: number): { rows: number[][]; buttonJoins: boolean } {
+  const rows: number[][] = []
+  let used = 0
+  widths.forEach((w, i) => {
+    const row = rows[rows.length - 1]
+    if (row !== undefined && used + sep + w <= columns) {
+      row.push(i)
+      used += sep + w
+    } else {
+      rows.push([i])
+      used = w
+    }
+  })
+  return { rows, buttonJoins: button > 0 && rows.length > 0 && used + BUTTON_GAP + button <= columns }
+}
+
+export const rowCount = (l: { rows: unknown[]; buttonJoins: boolean }, button: number): number =>
+  l.rows.length + (button > 0 && !l.buttonJoins ? 1 : 0)
+
+// The richest level (bars) whose layout needs at most 2 rows; else without bars. Resets and head are never dropped.
+export function pickLayout(d: StatusParts, columns: number, button: number) {
+  const make = (withBars: boolean) => {
+    const segments = segmentTexts(d, withBars)
+    return { withBars, segments, ...layoutRows(segments.map(s => [...s.text].length), columns, SEP_WIDTH, button) }
+  }
+  const rich = make(true)
+  return rowCount(rich, button) <= 2 ? rich : make(false)
 }
 
 // `claude-opus-5-5` as `Opus 5.5`; a name that is not a Claude model id stays as it is.
