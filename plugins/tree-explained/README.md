@@ -6,6 +6,10 @@ A side pane for Claude Code: the files Claude touched in this session as a tree,
 
 - Tree: only files the session touched. Edited or written files in orange with `+N -N` line counters; files that were only read, dim purple. The file of the call running now shimmers. Folders first, paths relative to the session folder. Capped at 300 files (the oldest-touched go).
 - Summary: after each turn that edited or wrote a file, one short summary (a headline and 2 to 5 bullets). If the model cannot answer, you get one `path +N -N` line per file instead. The last 20 are kept.
+- Folders open and close: press the folder row (or use the keys below). They start closed; every Edit or Write opens the folders above its file again, even ones you closed; a Read opens nothing. A closed folder shows `(3 edits, 2 reads)` and the summed `+N -N`.
+- Files outside the session folder (for example under `/tmp` or a plugin cache) are gathered in one closed row, `(outside project)`, with the file count; opened, it lists them as `parent/file`. An Edit outside the project reopens that row.
+- The pane follows the latest edit: the edited row is scrolled into view. Scrolling by hand stops that (a `f` follow key appears); `f` or your next prompt resumes it.
+- Header keys (while the pane has the keyboard): `c` fold all folders, `e` unfold all, `r` hide or show files that were only read, `t` collapse or expand the files section, `s` the summary section (a collapsed section shows its title and count). `f` follow, only after you scrolled. Esc still closes the pane. The section and read filters are remembered between sessions.
 - The tree and the summaries start over on `/clear`.
 - Off by default. The choice is remembered between sessions.
 
@@ -29,7 +33,7 @@ Known limits:
 
 - Only `Read`, `Edit` and `Write` are followed; changes made by `Bash`, `MultiEdit` or `NotebookEdit` do not show.
 - A `Write` counts all its lines as `+N`, even over an existing file.
-- A path outside the session folder is shown absolute.
+- The session folder is read again on every file call, so a `cd` is followed. Whether the engine honors every header key letter in a real terminal is unconfirmed outside the test kit.
 - Repeated edits of one file count as one file. Per turn the summary gets the content of the first 100 files (within the 6000 character cap) and only the names of the rest; past 1000 files in one turn the extra ones are counted ("K more files not listed"), not named.
 - A summary is asked once per turn, after it ends; it appears a few seconds later.
 - If the `haiku` alias is not allowed in your setup, you get the file lines only.
@@ -42,6 +46,10 @@ Um painel lateral para o Claude Code: os arquivos que o Claude tocou na sessão 
 
 - Árvore: só arquivos que a sessão tocou. Editados ou escritos em laranja, com contadores `+N -N`; os apenas lidos, em roxo esmaecido. O arquivo da chamada em andamento brilha. Pastas primeiro, caminhos relativos à pasta da sessão. Limite de 300 arquivos (saem os tocados há mais tempo).
 - Resumo: após cada turno que editou ou escreveu arquivo, um resumo curto (título e 2 a 5 itens). Se o modelo não responder, aparece uma linha `caminho +N -N` por arquivo. Os últimos 20 ficam.
+- Pastas abrem e fecham: aperte a linha da pasta (ou use as teclas abaixo). Nascem fechadas; todo Edit ou Write reabre as pastas acima do arquivo, mesmo as que você fechou; um Read não abre nada. Pasta fechada mostra `(3 edits, 2 reads)` e o `+N -N` somado.
+- Arquivos fora da pasta da sessão (por exemplo em `/tmp` ou no cache de plugins) ficam juntos numa linha fechada, `(outside project)`, com a contagem; aberta, lista como `pasta/arquivo`. Um Edit fora do projeto reabre essa linha.
+- O painel acompanha a última edição: a linha editada é rolada para a vista. Rolar à mão para o acompanhamento (aparece a tecla `f`); `f` ou o próximo prompt retoma.
+- Teclas do cabeçalho (com o painel com o teclado): `c` recolhe todas as pastas, `e` expande todas, `r` oculta ou mostra arquivos só lidos, `t` recolhe ou expande a seção de arquivos, `s` a do resumo (seção recolhida mostra título e contagem). `f` acompanhar, só depois de rolar à mão. Esc continua fechando o painel. As seções e o filtro de leitura são lembrados entre sessões.
 - A árvore e os resumos recomeçam no `/clear`.
 - Nasce desligado. A escolha é lembrada entre sessões.
 
@@ -65,7 +73,7 @@ Limites conhecidos:
 
 - Só `Read`, `Edit` e `Write` são acompanhados; mudanças feitas por `Bash`, `MultiEdit` ou `NotebookEdit` não aparecem.
 - Um `Write` conta todas as linhas como `+N`, mesmo sobre um arquivo existente.
-- Um caminho fora da pasta da sessão aparece absoluto.
+- A pasta da sessão é relida a cada chamada de arquivo, então um `cd` é acompanhado. Se o engine aceita todas as letras do cabeçalho num terminal real não foi confirmado fora do kit de testes.
 - Edições repetidas de um arquivo contam como um arquivo. Por turno o resumo recebe o conteúdo dos 100 primeiros arquivos (dentro do limite de 6000 caracteres) e só os nomes dos demais; acima de 1000 arquivos num turno os excedentes são contados ("K more files not listed"), não nomeados.
 - O resumo é pedido uma vez por turno, depois que ele termina; aparece alguns segundos depois.
 - Se o alias `haiku` não for permitido no seu ambiente, você recebe só as linhas por arquivo.

@@ -32,7 +32,7 @@ test('tree: dirs first, sorted, nested, with guides', () => {
   let files = {}
   let n = 0
   for (const p of ['z.md', 'src/b.ts', 'src/a.ts', 'src/lib/x.ts', 'a.md']) files = touch(files, e(p), ++n)
-  const rows = buildRows(files)
+  const rows = buildRows(files, ['src', 'src/lib'])
   expect(rows.map(r => r.prefix + r.name)).toEqual(['├─ src/', '│  ├─ lib/', '│  │  └─ x.ts', '│  ├─ a.ts', '│  └─ b.ts', '├─ a.md', '└─ z.md'])
   expect(rows.find(r => r.name === 'x.ts')?.entry?.path).toBe('src/lib/x.ts')
 })

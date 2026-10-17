@@ -1,58 +1,69 @@
 import type { Summary } from '../types'
+import { rowView } from './rows'
 import type { Row } from './tree'
 
 type Ui = { Box: any; Text: any; Button: any }
 
-const EDIT = '#ff9e3b'
-const EDIT_GLOW = '#ffd08a'
-const READ = '#a78bfa'
-const ADD = '#4ade80'
-const DEL = '#f87171'
+export type TreeActions = {
+  onToggle: (key: string) => unknown
+  onCollapse: () => unknown
+  onExpand: () => unknown
+  onReads: () => unknown
+  onTree: () => unknown
+  onSummary: () => unknown
+  onFollow: () => unknown
+}
 
-// The side pane: the tree of touched files, then one summary per finished turn (the pane's own scroll moves it all).
+// The side pane: header buttons, the tree of touched files, then one summary per finished turn (the pane's own scroll moves it all).
 export function treePage(
-  { Box, Text }: Ui,
-  p: { title: string; rows: Row[]; inflight: string[]; shimmer: boolean; summaries: Summary[] },
+  ui: Ui,
+  p: {
+    title: string
+    rows: Row[]
+    fileCount: number
+    inflight: string[]
+    shimmer: boolean
+    summaries: Summary[]
+    treeHidden: boolean
+    summaryHidden: boolean
+    readsHidden: boolean
+    manual: boolean
+    act: TreeActions
+  },
 ) {
+  const { Box, Text, Button } = ui
+  const { act } = p
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold color="claude" wrap="truncate">
         {p.title}
       </Text>
-      {p.rows.length === 0 && <Text dimColor>No files touched yet.</Text>}
-      {p.rows.map(r => {
-        const e = r.entry
-        if (e === undefined) {
-          return (
-            <Text key={`row-${r.key}`} wrap="truncate">
-              <Text dimColor>{r.prefix}</Text>
-              <Text bold>{r.name}</Text>
-            </Text>
-          )
-        }
-        const live = p.inflight.includes(e.path)
-        const base = e.kind === 'edit' ? EDIT : READ
-        return (
-          <Text key={`row-${r.key}`} wrap="truncate">
-            <Text dimColor>{r.prefix}</Text>
-            <Text color={live && p.shimmer ? EDIT_GLOW : base} bold={live} dimColor={e.kind === 'read' && !live}>
-              {r.name}
-            </Text>
-            {e.add > 0 && <Text color={ADD}> +{e.add}</Text>}
-            {e.del > 0 && <Text color={DEL}> -{e.del}</Text>}
-          </Text>
-        )
-      })}
-      <Box marginTop={1}>
-        <Text bold>summary</Text>
+      <Box flexWrap="wrap" columnGap={2}>
+        <Button key="hk-c" plain hotkey="c" label="fold" onPress={act.onCollapse} />
+        <Button key="hk-e" plain hotkey="e" label="unfold" onPress={act.onExpand} />
+        <Button key="hk-r" plain hotkey="r" label={p.readsHidden ? 'show reads' : 'hide reads'} onPress={act.onReads} />
+        <Button key="hk-t" plain hotkey="t" label="files" onPress={act.onTree} />
+        <Button key="hk-s" plain hotkey="s" label="summary" onPress={act.onSummary} />
+        {p.manual && <Button key="hk-f" plain hotkey="f" label="follow" onPress={act.onFollow} />}
       </Box>
-      {p.summaries.length === 0 && <Text dimColor>Nothing yet: a summary appears when a turn changes files.</Text>}
-      {p.summaries.map(s => (
-        <Box key={`sum-${s.turn}`} flexDirection="column" marginTop={1}>
-          <Text dimColor>turn {s.turn}{s.isFallback ? ' · files only' : ''}</Text>
-          <Text>{s.text}</Text>
-        </Box>
-      ))}
+      <Text bold>
+        {p.treeHidden ? '▸' : '▾'} files ({p.fileCount})
+      </Text>
+      {!p.treeHidden && p.rows.length === 0 && <Text dimColor>{p.fileCount === 0 ? 'No files touched yet.' : 'Only read files, hidden (r).'}</Text>}
+      {!p.treeHidden && p.rows.map(r => rowView(ui, r, { inflight: p.inflight, shimmer: p.shimmer, onToggle: act.onToggle }))}
+      <Box marginTop={1}>
+        <Text bold>
+          {p.summaryHidden ? '▸' : '▾'} summary ({p.summaries.length})
+        </Text>
+      </Box>
+      {!p.summaryHidden && p.summaries.length === 0 && <Text dimColor>Nothing yet: a summary appears when a turn changes files.</Text>}
+      {!p.summaryHidden &&
+        p.summaries.map(s => (
+          <Box key={`sum-${s.turn}`} flexDirection="column" marginTop={1}>
+            <Text dimColor>turn {s.turn}{s.isFallback ? ' · files only' : ''}</Text>
+            <Text>{s.text}</Text>
+          </Box>
+        ))}
       <Box marginTop={1}>
         <Text dimColor>↑↓ scroll · esc close</Text>
       </Box>

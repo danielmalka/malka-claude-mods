@@ -10,17 +10,46 @@ const CTRL_KEEP_LINES = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g
 // Safe to draw or to send: a file name or a model reply may carry escape sequences.
 export const cleanText = (s: string, keepLines = false) => s.replace(ANSI, '').replace(keepLines ? CTRL_KEEP_LINES : CTRL, '')
 
-// ponytail: a path outside the cwd stays absolute; no `../` walk.
+// Resolves `.` and `..` and drops empty segments and a trailing slash; a relative path stays relative.
+export function normalize(p: string) {
+  const out: string[] = []
+  for (const s of p.split('/')) {
+    if (s === '' || s === '.') continue
+    if (s === '..') out.pop()
+    else out.push(s)
+  }
+  return (p.startsWith('/') ? '/' : '') + out.join('/')
+}
+
+// Is `path` the cwd or below it? Whole segments only: /proj-other/x is not inside /proj. An unknown cwd counts everything as inside.
+export function inside(cwd: string, path: string) {
+  const base = normalize(cwd)
+  if (base === '') return true
+  const p = path.startsWith('/') ? normalize(path) : normalize(`${base}/${path}`)
+  return p === base || p.startsWith(base === '/' ? '/' : `${base}/`)
+}
+
+// Relative to the cwd when below it, else the normalized absolute path.
 export function relPath(file: string, cwd: string) {
   const f = cleanText(file)
-  const base = cwd.replace(/\/+$/, '')
-  return base !== '' && f.startsWith(`${base}/`) ? f.slice(base.length + 1) : f
+  const n = f.startsWith('/') ? normalize(f) : f
+  const base = normalize(cwd)
+  return base !== '' && n.startsWith(`${base === '/' ? '' : base}/`) ? n.slice(base === '/' ? 1 : base.length + 1) : n
+}
+
+// Where a touched file goes in the tree: its key in the files map and whether it is outside the project.
+export function locate(file: string, cwd: string) {
+  const f = cleanText(file)
+  const base = normalize(cwd)
+  const abs = f.startsWith('/') || base === '' ? normalize(f) : normalize(`${base}/${f}`)
+  const outside = !inside(base, abs)
+  return { path: outside ? abs : relPath(abs, base), outside }
 }
 
 // Lines of a text as a diff counts them: a trailing newline does not add one.
 export const countLines = (s: string) => (s === '' ? 0 : s.replace(/\n$/, '').split('\n').length)
 
-export type Touch = { path: string; kind: 'read' | 'edit'; add: number; del: number }
+export type Touch = { path: string; kind: 'read' | 'edit'; add: number; del: number; outside?: boolean }
 
 // Adds a touch to the files record (new object), dropping the oldest-touched past MAX_FILES.
 export function touch(files: Record<string, Entry>, t: Touch, seq: number): Record<string, Entry> {
@@ -33,6 +62,7 @@ export function touch(files: Record<string, Entry>, t: Touch, seq: number): Reco
       add: (prev?.add ?? 0) + t.add,
       del: (prev?.del ?? 0) + t.del,
       seq,
+      ...(t.outside || prev?.outside ? { outside: true as const } : {}),
     },
   }
   const keys = Object.keys(next)
@@ -43,38 +73,93 @@ export function touch(files: Record<string, Entry>, t: Touch, seq: number): Reco
   return next
 }
 
-export type Row = { key: string; prefix: string; name: string; isDir: boolean; entry?: Entry }
-type Node = { name: string; kids: Map<string, Node>; entry?: Entry }
+export const OUTSIDE = '(outside project)'
+export const rowKey = (path: string) => `row-${path}`
 
-// The tree as rows to draw: directories first, then files, each group sorted by name; Unicode guides.
-export function buildRows(files: Record<string, Entry>): Row[] {
-  const root: Node = { name: '', kids: new Map() }
+// A file row has `entry`; a folder row has the counts and sums of the files below it (shown while it is closed).
+export type Row = {
+  key: string
+  prefix: string
+  name: string
+  isDir: boolean
+  entry?: Entry
+  isOpen: boolean
+  hasKids: boolean
+  edits: number
+  reads: number
+  add: number
+  del: number
+  suffix: string
+}
+type Node = { name: string; path: string; kids: Map<string, Node>; entry?: Entry; synthetic?: boolean }
+
+// The folder keys above a file: every ancestor, or the one outside row.
+export function ancestors(path: string, outside = false): string[] {
+  if (outside) return [OUTSIDE]
+  const segs = path.split('/').filter(Boolean).slice(0, -1)
+  return segs.map((_, i) => segs.slice(0, i + 1).join('/'))
+}
+
+export const allFolders = (files: Record<string, Entry>) => [...new Set(Object.values(files).flatMap(e => ancestors(e.path, e.outside)))]
+export const openAll = (open: readonly string[], keys: readonly string[]) => [...new Set([...open, ...keys])]
+
+const leaves = (n: Node): Entry[] => [...(n.entry ? [n.entry] : []), ...[...n.kids.values()].flatMap(leaves)]
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+
+// The visible tree as rows: directories first, then files, each group sorted by name, the outside row last; Unicode guides.
+// A folder shows its children only while its key is in `open`; `hideReads` drops files that were only read (and the folders they leave empty).
+export function buildRows(files: Record<string, Entry>, open: readonly string[] = [], hideReads = false): Row[] {
+  const isOpen = new Set(open)
+  const root: Node = { name: '', path: '', kids: new Map() }
+  const outside: Node = { name: OUTSIDE, path: OUTSIDE, kids: new Map(), synthetic: true }
   for (const entry of Object.values(files)) {
-    const segs = entry.path.split('/').filter(Boolean)
-    if (entry.path.startsWith('/') && segs.length > 0) segs[0] = `/${segs[0]}`
+    if (hideReads && entry.kind === 'read') continue
+    if (entry.outside) {
+      const label = entry.path.split('/').filter(Boolean).slice(-2).join('/')
+      outside.kids.set(entry.path, { name: label, path: entry.path, kids: new Map(), entry })
+      continue
+    }
     let node = root
-    segs.forEach((seg, i) => {
+    entry.path.split('/').filter(Boolean).forEach((seg, i, segs) => {
       let kid = node.kids.get(seg)
-      if (!kid) node.kids.set(seg, (kid = { name: seg, kids: new Map() }))
+      if (!kid) node.kids.set(seg, (kid = { name: seg, path: node.path === '' ? seg : `${node.path}/${seg}`, kids: new Map() }))
       if (i === segs.length - 1) kid.entry = entry
       node = kid
     })
   }
+  if (outside.kids.size > 0) root.kids.set('\0outside', outside)
   const rows: Row[] = []
-  const walk = (node: Node, guide: string, path: string) => {
+  const walk = (node: Node, guide: string) => {
     const kids = [...node.kids.values()].sort((a, b) => {
-      const da = a.entry === undefined || a.kids.size > 0 ? 0 : 1
-      const db = b.entry === undefined || b.kids.size > 0 ? 0 : 1
+      const da = a.synthetic ? 2 : a.kids.size > 0 ? 0 : 1
+      const db = b.synthetic ? 2 : b.kids.size > 0 ? 0 : 1
       return da - db || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
     })
     kids.forEach((kid, i) => {
       const last = i === kids.length - 1
-      const key = `${path}/${kid.name}`
-      const isDir = kid.entry === undefined || kid.kids.size > 0
-      rows.push({ key, prefix: guide + (last ? '└─ ' : '├─ '), name: isDir ? `${kid.name}/` : kid.name, isDir, entry: isDir ? undefined : kid.entry })
-      walk(kid, guide + (last ? '   ' : '│  '), key)
+      const isDir = kid.kids.size > 0
+      const open = isDir && isOpen.has(kid.path)
+      const es = isDir ? leaves(kid) : []
+      const edits = es.filter(e => e.kind === 'edit').length
+      const reads = es.length - edits
+      const parts = [...(kid.synthetic ? [plural(es.length, 'file')] : []), ...(edits ? [plural(edits, 'edit')] : []), ...(reads ? [plural(reads, 'read')] : [])]
+      rows.push({
+        key: isDir ? kid.path : (kid.entry?.path ?? kid.path),
+        prefix: guide + (last ? '└─ ' : '├─ '),
+        name: isDir && !kid.synthetic ? `${kid.name}/` : kid.name,
+        isDir,
+        entry: isDir ? undefined : kid.entry,
+        isOpen: open,
+        hasKids: isDir,
+        edits,
+        reads,
+        add: es.reduce((n, e) => n + e.add, 0),
+        del: es.reduce((n, e) => n + e.del, 0),
+        suffix: !open && parts.length ? `(${parts.join(', ')})` : '',
+      })
+      if (open) walk(kid, guide + (last ? '   ' : '│  '))
     })
   }
-  walk(root, '', '')
+  walk(root, '')
   return rows
 }
