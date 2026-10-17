@@ -1,6 +1,6 @@
 {
   "name": "menu",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "An optional /mods menu that lists the installed mods (status line, clean screen, mode, permissions, tree-explained) and opens each one's page in a pane.",
   "author": {
     "name": "danielmalka"
