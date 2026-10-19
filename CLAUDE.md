@@ -23,6 +23,7 @@
 ## statusline 0.2.0 (decidido pelo dono em 2026-10-17)
 
 - A barra da statusline tem faixa própria `AbovePrompt`, isolada da linha do rótulo de modo do engine (`bypass permissions on` fica onde está); nenhuma informação é cortada em tela estreita: os segmentos (ctx, 5h, 7d, cache, modelo·pasta·branch) são atômicos e quebram para a linha de baixo. As barras de progresso só caem se duas linhas não bastarem; números, resets e cabeçalho nunca.
+- Atualização (decidido pelo dono em 2026-10-19): SEM barras de progresso em nenhuma largura; só o texto (porcentagens, tokens, resets, cache, cabeçalho). Substitui a regra acima de "barras só caem se duas linhas não bastarem".
 - O `[-]` do engine pode recolher a faixa (aceito). Nossa linha própria `⎿ pill · /tasks to manage` foi abandonada (o engine mantém a dele).
 - Todo hook `AbovePrompt` deve chamar `next(e)` uma única vez e compor com o que está abaixo (padrão do decision-router/resume/cleanscreen).
 
