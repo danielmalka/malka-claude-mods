@@ -1,12 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
-import { barFill, cacheState, CACHE_TTL_MS, colorFor, fmtDuration, fmtTokens, layoutRows, pickLayout, prettyModel, rowCount, segmentTexts, SEP_WIDTH } from '../hooks/status'
+import { cacheState, CACHE_TTL_MS, colorFor, fmtDuration, fmtTokens, layoutRows, pickLayout, prettyModel, rowCount, segmentTexts, SEP_WIDTH } from '../hooks/status'
 import { configDir, moveStatusLine } from '../hooks/settings'
 
-test('fmtTokens, fmtDuration and barFill', () => {
+test('fmtTokens and fmtDuration', () => {
   expect([fmtTokens(999), fmtTokens(12_400), fmtTokens(1_000_000), fmtTokens(1_500_000)]).toEqual(['999', '12k', '1M', '1.5M'])
   expect([fmtDuration(45_000), fmtDuration(12 * 60_000), fmtDuration(278 * 60_000), fmtDuration(138 * 3_600_000)]).toEqual(['45s', '12m', '4h38m', '5d18h'])
-  expect([barFill(-5), barFill(0), barFill(55), barFill(100), barFill(250)]).toEqual([0, 0, 5, 10, 10])
 })
 
 test('colors, cache state, model name', () => {
@@ -25,12 +24,12 @@ const parts = {
   head: 'Opus 5.5 · proj · main',
 }
 
-test('segmentTexts: priority order, bars only when asked, no cache segment when empty', () => {
-  const rich = segmentTexts(parts, true)
-  expect(rich.map(s => s.key)).toEqual(['ctx', 'limit-5h', 'limit-7d', 'cache', 'head'])
-  expect(rich[0]!.text).toBe('ctx ██████████ 41% 82k/200k')
-  expect(segmentTexts(parts, false)[1]!.text).toBe('5h 30% (resets 1h00m)')
-  expect(segmentTexts({ ...parts, cacheText: '' }, false).map(s => s.key)).toEqual(['ctx', 'limit-5h', 'limit-7d', 'head'])
+test('segmentTexts: priority order, text only, no cache segment when empty', () => {
+  const all = segmentTexts(parts)
+  expect(all.map(s => s.key)).toEqual(['ctx', 'limit-5h', 'limit-7d', 'cache', 'head'])
+  expect(all[0]!.text).toBe('ctx 41% 82k/200k')
+  expect(all[1]!.text).toBe('5h 30% (resets 1h00m)')
+  expect(segmentTexts({ ...parts, cacheText: '' }).map(s => s.key)).toEqual(['ctx', 'limit-5h', 'limit-7d', 'head'])
 })
 
 test('layoutRows: empty, one row, wrap, oversized alone, every index once', () => {
@@ -52,20 +51,18 @@ test('layoutRows: the button joins the last row when gap + button fits, else has
   expect(rowCount(layoutRows([10], 30, SEP_WIDTH, 0), 0)).toBe(1)
 })
 
-test('pickLayout: bars while 2 rows suffice, then no bars; resets and head are always kept', () => {
+test('pickLayout: one text-only layout at any width; resets and head are always kept', () => {
   const at = (columns: number) => pickLayout(parts, columns, 6)
-  expect(at(200)).toMatchObject({ withBars: true })
   expect(at(200).rows).toHaveLength(1)
-  expect(at(120).withBars).toBe(true)
   expect(rowCount(at(120), 6)).toBeLessThanOrEqual(2)
-  expect(at(60).withBars).toBe(false)
+  expect(at(200).segments.every(s => !/[█░]/.test(s.text))).toBe(true)
   for (const columns of [200, 120, 60, 30, 10]) {
     const l = at(columns)
     expect(l.segments.map(s => s.key)).toEqual(['ctx', 'limit-5h', 'limit-7d', 'cache', 'head'])
     expect(l.segments.some(s => s.text.includes('resets'))).toBe(true)
     expect(l.rows.flat().sort()).toEqual([0, 1, 2, 3, 4])
   }
-  expect(rowCount(at(30), 6)).toBeGreaterThan(2) // no bars and still more rows: nothing is cut to fit
+  expect(rowCount(at(30), 6)).toBeGreaterThan(2) // still more rows: nothing is cut to fit
 })
 
 test('moveStatusLine keeps the user value and puts it back', () => {

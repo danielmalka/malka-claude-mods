@@ -3,7 +3,6 @@ export const STATUS_GREEN = '#22c55e'
 export const STATUS_YELLOW = '#eab308'
 export const STATUS_RED = '#ef4444'
 export const STATUS_CYAN = '#22d3ee'
-export const BAR_WIDTH = 10
 
 // Claude Code's main-thread prompt cache lives for an hour on a subscription.
 export const CACHE_TTL_MS = 60 * 60 * 1000
@@ -28,9 +27,6 @@ export const fmtDuration = (ms: number): string => {
   return `${Math.floor(h / 24)}d${String(h % 24).padStart(2, '0')}h`
 }
 
-export const barFill = (percent: number): number =>
-  Math.floor((Math.min(Math.max(percent, 0), 100) * BAR_WIDTH) / 100)
-
 // "ok" while the last response is younger than the cache, "over" after; null before the first response.
 export const cacheState = (lastResponseAt: number | null, now: number): 'ok' | 'over' | null =>
   lastResponseAt === null ? null : now - lastResponseAt < CACHE_TTL_MS ? 'ok' : 'over'
@@ -48,12 +44,11 @@ export type StatusParts = {
   head: string
 }
 
-// The same strings the band draws; with bars, a bar and its trailing space sit before each percentage.
-export const segmentTexts = (d: StatusParts, withBars: boolean): Segment[] => {
-  const bar = withBars ? `${'█'.repeat(BAR_WIDTH)} ` : ''
+// The same strings the band draws. Text only: the status line never draws progress bars.
+export const segmentTexts = (d: StatusParts): Segment[] => {
   return [
-    { key: 'ctx', text: `ctx ${bar}${d.ctxText}` },
-    ...d.limits.map(l => ({ key: `limit-${l.label}`, text: `${l.label} ${bar}${l.percentText}${l.resetText}` })),
+    { key: 'ctx', text: `ctx ${d.ctxText}` },
+    ...d.limits.map(l => ({ key: `limit-${l.label}`, text: `${l.label} ${l.percentText}${l.resetText}` })),
     ...(d.cacheText === '' ? [] : [{ key: 'cache', text: d.cacheText }]),
     { key: 'head', text: d.head },
   ]
@@ -83,14 +78,10 @@ export function layoutRows(widths: readonly number[], columns: number, sep: numb
 export const rowCount = (l: { rows: unknown[]; buttonJoins: boolean }, button: number): number =>
   l.rows.length + (button > 0 && !l.buttonJoins ? 1 : 0)
 
-// The richest level (bars) whose layout needs at most 2 rows; else without bars. Resets and head are never dropped.
+// Resets and head are never dropped.
 export function pickLayout(d: StatusParts, columns: number, button: number) {
-  const make = (withBars: boolean) => {
-    const segments = segmentTexts(d, withBars)
-    return { withBars, segments, ...layoutRows(segments.map(s => [...s.text].length), columns, SEP_WIDTH, button) }
-  }
-  const rich = make(true)
-  return rowCount(rich, button) <= 2 ? rich : make(false)
+  const segments = segmentTexts(d)
+  return { segments, ...layoutRows(segments.map(s => [...s.text].length), columns, SEP_WIDTH, button) }
 }
 
 // `claude-opus-5-5` as `Opus 5.5`; a name that is not a Claude model id stays as it is.

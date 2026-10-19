@@ -1,5 +1,5 @@
 import type { StatusSnapshot } from '../types'
-import { barFill, BAR_WIDTH, cacheState, colorFor, fmtDuration, fmtTokens, pickLayout, prettyModel, STATUS_CYAN, STATUS_GREEN, STATUS_RED } from './status'
+import { cacheState, colorFor, fmtDuration, fmtTokens, pickLayout, prettyModel, STATUS_CYAN, STATUS_GREEN, STATUS_RED } from './status'
 
 type Ui = { Box: any; Text: any; Button: any }
 
@@ -18,12 +18,6 @@ export function statusBand(
 ) {
   const { snapshot, clock } = p
   const cache = cacheState(p.lastResponseAt, clock)
-  const bar = (percent: number, color: string) => (
-    <Text>
-      <Text color={color}>{'█'.repeat(barFill(percent))}</Text>
-      <Text dimColor>{'░'.repeat(BAR_WIDTH - barFill(percent))}</Text>{' '}
-    </Text>
-  )
   const ctxPercent = Math.round(snapshot.ctxPercent ?? 0)
   const ctxTokens =
     snapshot.ctxTokens === null ? '' : ` ${fmtTokens(snapshot.ctxTokens)}${snapshot.ctxWindow ? `/${fmtTokens(snapshot.ctxWindow)}` : ''}`
@@ -35,7 +29,7 @@ export function statusBand(
   const model = prettyModel(snapshot.model)
   const head = `${model} · ${snapshot.dir}${snapshot.branch === '' ? '' : ` · ${snapshot.branch}`}`
   const buttonWidth = p.button === undefined ? 0 : [...p.label].length
-  const { withBars, segments, rows, buttonJoins } = pickLayout(
+  const { segments, rows, buttonJoins } = pickLayout(
     { ctxText: `${ctxPercent}%${ctxTokens}`, limits, cacheText: cache === null ? '' : `● cache ${cache}`, head },
     p.columns,
     buttonWidth,
@@ -45,7 +39,6 @@ export function statusBand(
     ctx: (
       <Text key="seg-ctx">
         <Text>ctx </Text>
-        {withBars && bar(ctxPercent, colorFor(ctxPercent))}
         <Text bold color={colorFor(ctxPercent)}>{`${ctxPercent}%`}</Text>
         <Text dimColor>{ctxTokens}</Text>
       </Text>
@@ -64,7 +57,6 @@ export function statusBand(
     drawn[`limit-${l.label}`] = (
       <Text key={`seg-limit-${l.label}`}>
         <Text>{l.label} </Text>
-        {withBars && bar(l.percent, colorFor(l.percent))}
         <Text bold color={colorFor(l.percent)}>{l.percentText}</Text>
         <Text dimColor>{l.resetText}</Text>
       </Text>

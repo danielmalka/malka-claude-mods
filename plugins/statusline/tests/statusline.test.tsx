@@ -204,7 +204,7 @@ test('the band with the menu absent: ctx, limit countdown, then model, folder, b
   expect(await ui.find({ key: 'mods-open' })).toBeUndefined()
 })
 
-// every segment, whole, at any width: compared with the full-detail strings (bars stripped)
+// every segment, whole, at any width: compared with the full-detail strings; never a progress bar
 for (const width of [200, 140, 80, 40]) {
   test(`bodyColumns ${width}: every segment is drawn whole, none cut or missing`, async ($, on) => {
     mock.clock(on, { now: 0 })
@@ -215,16 +215,17 @@ for (const width of [200, 140, 80, 40]) {
     const gen: any = $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', effort: 'medium', messageCount: 1 })
     for await (const _ of gen) void _
     const ui = await $.ui.mount(band(width))
-    // the full-detail strings; a bar (with its trailing space) may sit before the percentage
+    // the full-detail strings
     const full: [string, string, RegExp][] = [
       ['ctx', '41% 82k/200k', /^ctx 41% 82k\/200k$/],
       ['5h', '30% \\(resets \\d+[smhd]\\w*\\)', /^5h 30% \(resets \d+[smhd]\w*\)$/],
       ['7d', '12% \\(resets \\d+[smhd]\\w*\\)', /^7d 12% \(resets \d+[smhd]\w*\)$/],
     ]
     for (const [label, rest, whole] of full) {
-      const found = (await ui.find({ type: 'Text', text: new RegExp(`^${label} (?:[█░]+ )?${rest}$`) })) as any
+      const found = (await ui.find({ type: 'Text', text: new RegExp(`^${label} ${rest}$`) })) as any
       expect(found).toBeDefined()
-      expect((found.text as string).replace(/[█░]+ /, '')).toMatch(whole)
+      expect(found.text as string).toMatch(whole)
+      expect(found.text as string).not.toMatch(/[█░]/)
     }
     expect(((await ui.find({ type: 'Text', text: '● cache ok' })) as any).text).toBe('● cache ok')
     expect(((await ui.find({ type: 'Text', text: 'Opus 5.5 · proj · main' })) as any).text).toBe('Opus 5.5 · proj · main')

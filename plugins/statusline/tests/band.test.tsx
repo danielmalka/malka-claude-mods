@@ -47,7 +47,7 @@ test('button fit boundary: joins at columns == used + 1 + label width, own row o
     const l = pickLayout(parts, c, w)
     const prev = pickLayout(parts, c - 1, w)
     const used = usedBy(l.rows[l.rows.length - 1]!, l.segments.map(s => [...s.text].length))
-    if (l.buttonJoins && c === used + 1 + w && !prev.buttonJoins && JSON.stringify(prev.rows) === JSON.stringify(l.rows) && prev.withBars === l.withBars) boundary = c
+    if (l.buttonJoins && c === used + 1 + w && !prev.buttonJoins && JSON.stringify(prev.rows) === JSON.stringify(l.rows)) boundary = c
   }
   expect(boundary).toBeGreaterThan(0)
   const at = await rowsOf(await $.ui.mount(band(boundary)))
